@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Haiti Infrastructure Plan</title>
+    <meta name="description" content="Interactive 3D map of a Swiss Alpine-style rail + highway master plan for Haiti: national trunks, base tunnels, ring beltways (Périphériques), island bridges and ferries, and local networks." />
+    <meta name="theme-color" content="#0d1117" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d1117'/%3E%3Cpath d='M7 22c4-9 8-12 18-13' stroke='%2334D399' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='5' stroke='%23B794F6' stroke-width='2.5' fill='none'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="map" aria-label="Map of Haiti"></div>
+
+    <aside id="panel" class="panel" data-state="peek" aria-label="Plan explorer">
+      <button class="sheet-handle" id="sheetHandle" data-i18n-aria="panel.handle" aria-label="Expand or collapse panel"><span></span></button>
+
+      <header class="panel-head">
+        <div class="brand-row">
+          <div class="brand">
+            <h1 data-i18n="app.title">Haiti Infrastructure Plan</h1>
+            <p data-i18n="app.subtitle">Swiss Alpine rail + highway network for all 10 departments</p>
+          </div>
+          <button class="icon-btn collapse-btn" id="collapseBtn" data-i18n-title="panel.hide" data-i18n-aria="panel.hide" title="Hide panel" aria-label="Hide panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+          </button>
+        </div>
+        <div class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+          <input id="search" type="search" placeholder="Search routes, cities, sites…" autocomplete="off" data-i18n-aria="search.aria" aria-label="Search the plan" />
+        </div>
+      </header>
+
+      <div class="panel-body" id="panelBody">
+        <section id="results" class="results" hidden></section>
+
+        <section id="detail" class="detail" hidden></section>
+
+        <section id="home">
+          <div class="stats" id="stats"></div>
+
+          <div class="block">
+            <div class="block-head">
+              <h2 data-i18n="h.departments">Departments</h2>
+              <button class="link-btn" id="clearDept" data-i18n="h.showAll" hidden>Show all</button>
+            </div>
+            <div class="depts" id="depts"></div>
+            <div id="deptCard"></div>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <h2 data-i18n="h.layers">Layers</h2>
+              <label class="mini-toggle" data-i18n-title="local.title" title="Show local roads and towns even when zoomed out">
+                <input type="checkbox" id="localAlways" />
+                <span data-i18n="local.always">Local detail always</span>
+              </label>
+            </div>
+            <ul class="layers" id="layers"></ul>
+          </div>
+
+          <footer class="credits" data-i18n="credits">
+            Plan data: the project's Google Earth file, expanded to 305 features. Ring stations, ferry terminals and river bridges
+            are placed automatically from the plan's geometry. Department outlines: Natural Earth. Imagery: Esri, Maxar.
+            Terrain: Mapzen / AWS Open Data. Labels: © OpenStreetMap via OpenFreeMap. Street map: CARTO.
+            Lengths are measured along the drawn lines and are approximate.
+          </footer>
+        </section>
+      </div>
+    </aside>
+
+    <button id="openPanel" class="open-panel" hidden data-i18n-aria="panel.show" aria-label="Show panel">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span data-i18n="app.short">Haiti Plan</span>
+    </button>
+
+    <div id="tooltip" class="tooltip" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="flyBar" class="fly-bar" hidden>
+      <span id="flyLabel">Flying along route</span>
+      <button id="flyStop" data-i18n="fly.stop">Stop</button>
+    </div>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
