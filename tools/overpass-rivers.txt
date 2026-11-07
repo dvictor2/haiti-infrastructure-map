@@ -1,0 +1,4 @@
+[out:json][timeout:180];
+area["ISO3166-1"="HT"][admin_level=2]->.ht;
+way["waterway"="river"]["name"](area.ht);
+out tags geom;

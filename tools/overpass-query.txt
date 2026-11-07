@@ -1,0 +1,23 @@
+[out:json][timeout:180];
+area["ISO3166-1"="HT"][admin_level=2]->.ht;
+(
+  nwr["power"="plant"](area.ht);
+  nwr["power"="substation"](area.ht);
+  way["power"="line"](area.ht);
+  way["waterway"="canal"](area.ht);
+  nwr["man_made"~"^(water_works|wastewater_plant|water_tower|reservoir_covered|desalination_plant)$"](area.ht);
+  nwr["amenity"="hospital"](area.ht);
+  nwr["amenity"="university"](area.ht);
+  nwr["landuse"="industrial"]["name"](area.ht);
+  nwr["harbour"="yes"](area.ht);
+  nwr["landuse"="port"](area.ht);
+  nwr["industrial"="port"](area.ht);
+  nwr["boundary"="protected_area"](area.ht);
+  nwr["leisure"="nature_reserve"](area.ht);
+  nwr["boundary"="national_park"](area.ht);
+  nwr["landuse"="landfill"](area.ht);
+  nwr["telecom"~"data_center|exchange"](area.ht);
+  nwr["man_made"="dam"](area.ht);
+  way["waterway"="dam"](area.ht);
+);
+out tags geom;

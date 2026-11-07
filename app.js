@@ -123,7 +123,7 @@ function bboxOf(coords) {
   }
   return b;
 }
-const flatCoords = (g) => (g.type === 'Point' ? [g.coordinates] : g.type === 'LineString' ? g.coordinates : g.type === 'Polygon' ? g.coordinates[0] : g.coordinates.flat(2));
+const flatCoords = (g) => ({ Point: [g.coordinates], LineString: g.coordinates, Polygon: g.coordinates[0], MultiLineString: g.coordinates.flat(1), MultiPolygon: g.coordinates.flat(2) })[g.type] ?? [];
 
 function toast(msg) {
   const t = $('#toast');
@@ -146,8 +146,13 @@ const state = {
   base: 'satellite',
   collapsed: false,
   rail: true,
+  tab: 'plan',
+  devThemes: new Set(),
+  devStatus: new Set(['existing', 'proposed']),
+  pop: false,
 };
 let plan, depts, byId;
+let dev, popData, stats, devById = new Map();
 
 // ---------------------------------------------------------------------------
 // Map style
@@ -283,7 +288,7 @@ const DATA_LAYERS = [
   { id: 'labels-infra', filter: ['all', isPoint, inCats(INFRA)], type: 'symbol', minzoom: 10.6, layout: { 'text-field': infraLabel(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
   { id: 'labels-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'symbol', layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10.5, 10, 13.5], 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': ['match', ['get', 'category'], 'water', '#A5F3FC', 'site', '#FED7AA', '#FFFFFF'], 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
 ];
-const INTERACTIVE = ['points-infra', 'points-national', 'points-local', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill'];
+const INTERACTIVE = ['dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill'];
 
 function catFilter() {
   const hidden = [...state.hidden];
@@ -309,10 +314,15 @@ function applyFilters() {
 // ---------------------------------------------------------------------------
 // Load
 // ---------------------------------------------------------------------------
-const dataReady = Promise.all([fetch('data/plan.geojson').then((r) => r.json()), fetch('data/departments.geojson').then((r) => r.json())]);
+const getJSON = (u) => fetch(u).then((r) => r.json());
+const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json')]);
 
 map.on('load', async () => {
-  [plan, depts] = await dataReady;
+  [plan, depts, dev, popData, stats] = await dataReady;
+  for (const f of dev.features) {
+    f._bbox = bboxOf(flatCoords(f.geometry));
+    devById.set(f.properties.id, f);
+  }
   byId = new Map();
   for (const f of plan.features) {
     const coords = flatCoords(f.geometry);
@@ -336,6 +346,8 @@ map.on('load', async () => {
     map.addLayer({ id: L.id, type: L.type, source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), ...(L.layout ? { layout: L.layout } : {}), paint: L.paint });
   }
 
+  addDevLayers();
+
   // Hover + selection highlights sit above lines, below labels.
   map.addLayer({ id: 'hover-line', type: 'line', source: 'plan', filter: ['==', ['get', 'id'], -1], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': 0.55, 'line-width': widthPlus(4) } });
   map.addLayer({ id: 'sel-glow', type: 'line', source: 'plan', filter: ['==', ['get', 'id'], -1], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': catColor, 'line-width': widthPlus(10), 'line-blur': 6, 'line-opacity': 0.55 } });
@@ -349,14 +361,24 @@ map.on('load', async () => {
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
   }
 
+  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 8.6, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
   if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: 1.5 });
   applyFilters();
+  applyDevFilters();
   buildPanel();
   wireMap();
   animateDash();
 
-  const f = Number(new URLSearchParams(location.hash.slice(1)).get('f'));
-  if (f && byId.has(f)) select(f, { move: !hadView });
+  const fRaw = new URLSearchParams(location.hash.slice(1)).get('f');
+  const f = fRaw && /^d\d+$/.test(fRaw) ? fRaw : Number(fRaw);
+  if (typeof f === 'string' && devById.has(f)) {
+    setTab('dev');
+    const p = devById.get(f).properties;
+    state.devThemes.add(p.theme);
+    applyDevFilters();
+    renderDevPanel();
+    select(f, { move: !hadView });
+  } else if (f && byId.has(f)) select(f, { move: !hadView });
   else if (!hadView) {
     map.jumpTo({ center: [-72.7, 19.0], zoom: PHONE.matches ? 4.6 : 5.4 });
     map.fitBounds(HAITI_BOUNDS, { padding: PHONE.matches ? { top: 40, left: 2, right: 44, bottom: 170 } : pad(), pitch: PHONE.matches ? 0 : 38, bearing: PHONE.matches ? 0 : -4, duration: 2600, essential: true });
@@ -487,7 +509,13 @@ function wireMap() {
       map.setFilter('hover-line', ['==', ['get', 'id'], id ?? -1]);
     }
     map.getCanvas().style.cursor = id ? 'pointer' : '';
-    if (id) {
+    if (id && devById.has(id)) {
+      const p = devById.get(id).properties;
+      tip.innerHTML = `${esc(devName(p))}<small>${esc(t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'))}</small>`;
+      tip.style.left = `${e.point.x}px`;
+      tip.style.top = `${e.point.y}px`;
+      tip.hidden = false;
+    } else if (id) {
       const p = byId.get(id).properties;
       tip.innerHTML = `${esc(displayName(p))}<small>${[p.km ? fmtKm(p.km) : null, modeText(p) ?? catOne(p.category)].filter(Boolean).map(esc).join(' · ')}</small>`;
       tip.style.left = `${e.point.x}px`;
@@ -548,9 +576,11 @@ function fitFeature(f, opts = {}) {
 }
 
 function select(id, { move = true } = {}) {
+  if (typeof id === 'string' && devById.has(id)) return selectDev(id, { move });
   const f = byId.get(id);
   if (!f) return;
   stopFly();
+  clearDevSelection();
   state.selected = id;
   const isPt = f.geometry.type === 'Point';
   for (const l of ['sel-glow', 'sel-line', 'sel-dash']) map.setFilter(l, isPt ? ['==', ['get', 'id'], -1] : ['all', ['==', ['get', 'id'], id], ['!=', ['geometry-type'], 'Point']]);
@@ -566,7 +596,7 @@ function select(id, { move = true } = {}) {
   $('#search').value = '';
   $('#results').hidden = true;
   renderDetail(f);
-  $('#home').hidden = false;
+  setTab(state.tab);
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
   $('#panelBody').scrollTop = 0;
   if (move) requestAnimationFrame(() => fitFeature(f));
@@ -574,6 +604,7 @@ function select(id, { move = true } = {}) {
 
 function clearSelection() {
   state.selected = null;
+  clearDevSelection();
   for (const l of ['sel-glow', 'sel-line', 'sel-dash', 'sel-point']) map.getLayer(l) && map.setFilter(l, ['==', ['get', 'id'], -1]);
   setHashParam('f', null);
   $('#detail').hidden = true;
@@ -603,7 +634,10 @@ function connections(f) {
   return out.slice(0, 12);
 }
 
+const itemId = (v) => (/^d\d+$/.test(v) ? v : Number(v));
+
 function itemHTML(f, right) {
+  if (devById.has(f.properties.id)) return devItemHTML(f);
   const p = f.properties;
   const sub = [displaySub(p), p.dept].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || catOne(p.category);
   return `<li><button class="item" data-id="${p.id}" style="--c:${CATS[p.category].color}">
@@ -641,6 +675,7 @@ function renderDetail(f) {
     <h2>${esc(displayName(p))}</h2>
     ${displaySub(p) ? `<p class="sub">${esc(displaySub(p))}</p>` : ''}
     <div class="badges">${badges.join('')}</div>
+    ${stats?.places[p.id] && ['city', 'town', 'station'].includes(p.category) ? `<p class="note">${t('dev.people', { p5: fmtPeople(stats.places[p.id].p5), p10: fmtPeople(stats.places[p.id].p10), p25: fmtPeople(stats.places[p.id].p25) })}</p>` : ''}
     ${p.derived ? `<p class="note">${t(`note.${p.category}`)}${p.serves ? `<br><b>${t('note.serves')}</b> ${esc(p.serves)}` : ''}</p>` : ''}
     <div class="facts">${facts.slice(0, 3).map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${k}</span></div>`).join('')}</div>
     <div class="actions">
@@ -657,7 +692,7 @@ function renderDetail(f) {
   el.querySelector('#btnZoom').onclick = () => fitFeature(f);
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
-  el.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(Number(b.dataset.id))));
+  el.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
   if (isLineF && !['border', 'ferry'].includes(p.category)) renderProfile(f, token);
 }
 
@@ -889,6 +924,20 @@ function buildPanel() {
   });
   input.addEventListener('focus', () => PHONE.matches && setSheet('full'));
 
+  // Plan | Development tabs
+  document.querySelectorAll('.tabs [data-tab]').forEach((b) => (b.onclick = () => setTab(b.dataset.tab)));
+  $('#popToggle').onclick = togglePop;
+  $('#popToggle').onkeydown = (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), togglePop());
+  $('#popHint').textContent = t('dev.popHint', { n: fmtPeople(popData.total) });
+  document.querySelectorAll('.status-chips .chip').forEach((c) => (c.onclick = () => {
+    const st = c.dataset.status;
+    state.devStatus.has(st) ? state.devStatus.delete(st) : state.devStatus.add(st);
+    if (!state.devStatus.size) state.devStatus.add(st === 'existing' ? 'proposed' : 'existing');
+    applyDevFilters();
+    renderDevPanel();
+  }));
+  renderDevPanel();
+
   // Hide / show the panel (remembered on this device).
   $('#collapseBtn').onclick = () => setCollapsed(true);
   $('#openPanel').onclick = () => setCollapsed(false);
@@ -900,19 +949,40 @@ function buildPanel() {
 
   // Sheet handle (phone)
   $('#sheetHandle').onclick = () => {
+    if ($('#sheetHandle').dataset.dragged) return void delete $('#sheetHandle').dataset.dragged;
     const s = $('#panel').dataset.state;
     setSheet(s === 'peek' ? 'half' : s === 'half' ? 'full' : 'peek');
   };
-  let y0 = null;
-  $('#sheetHandle').addEventListener('touchstart', (e) => (y0 = e.touches[0].clientY), { passive: true });
-  $('#sheetHandle').addEventListener('touchend', (e) => {
-    if (y0 == null) return;
-    const dy = e.changedTouches[0].clientY - y0;
-    const s = $('#panel').dataset.state;
-    if (dy < -30) setSheet(s === 'peek' ? 'half' : 'full');
-    if (dy > 30) setSheet(s === 'full' ? 'half' : 'peek');
-    y0 = null;
+  // Drag the sheet with a finger: it follows, then snaps to the nearest size.
+  let drag = null;
+  const sheet = $('#panel');
+  $('#sheetHandle').addEventListener('pointerdown', (e) => {
+    if (!PHONE.matches) return;
+    drag = { y: e.clientY, h: sheet.getBoundingClientRect().height, moved: false };
+    $('#sheetHandle').setPointerCapture(e.pointerId);
+    sheet.style.transition = 'none';
   });
+  $('#sheetHandle').addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dy = e.clientY - drag.y;
+    if (Math.abs(dy) > 4) drag.moved = true;
+    sheet.style.height = `${clamp(drag.h - dy, 120, window.innerHeight * 0.92)}px`;
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const h = sheet.getBoundingClientRect().height;
+    sheet.style.transition = '';
+    sheet.style.height = '';
+    if (drag.moved) {
+      const vh = window.innerHeight;
+      const snaps = [['peek', 152], ['half', vh * 0.52], ['full', vh * 0.88]];
+      setSheet(snaps.reduce((a, b) => (Math.abs(b[1] - h) < Math.abs(a[1] - h) ? b : a))[0]);
+      $('#sheetHandle').dataset.dragged = '1';
+    }
+    drag = null;
+  };
+  $('#sheetHandle').addEventListener('pointerup', endDrag);
+  $('#sheetHandle').addEventListener('pointercancel', endDrag);
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.activeElement === document.body) {
@@ -1006,12 +1076,12 @@ function setDept(name, { move = true } = {}) {
   const routes = feats.filter((f) => ROAD_CATS.includes(f.properties.category) && f.properties.tier === 'national').sort((a, b) => b.properties.km - a.properties.km).slice(0, 8);
   card.innerHTML = `<div class="dept-card">
     <h3>${esc(name)}</h3>
-    <p>${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
+    <p>${stats?.depts[name] ? `<b>${t('dev.deptPeople', { n: fmtPeople(stats.depts[name]) })}</b> · ` : ''}${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
     <div class="bar">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color};width:${(tt[k].km / roadKm) * 100}%" title="${catLabel(k)}: ${fmtKm(tt[k].km)}"></span>`).join('')}</div>
     <div class="legend-row">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color}"><i></i>${catLabel(k)} ${fmtKm(tt[k].km)}</span>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
   </div>`;
-  card.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(Number(b.dataset.id))));
+  card.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
   card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   if (move) {
@@ -1026,7 +1096,7 @@ function runSearch(q) {
   const terms = norm(q).split(/\s+/).filter(Boolean);
   if (!terms.length) {
     box.hidden = true;
-    $('#home').hidden = false;
+    setTab(state.tab);
     return;
   }
   const hits = [];
@@ -1038,13 +1108,20 @@ function runSearch(q) {
       hits.push([score, f]);
     }
   }
+  for (const f of dev?.features ?? []) {
+    const p = f.properties;
+    if (p.kind === 'protectedLabel' || (!p.name && p.status === 'existing')) continue;
+    const hay = norm(`${devName(p)} ${p.name ?? ''} ${p.place ?? ''} ${p.dept ?? ''} ${t(`theme.${p.theme}`)[0]}`);
+    if (terms.every((w) => hay.includes(w))) hits.push([(norm(devName(p)).startsWith(terms[0]) ? 5 : 20) + (p.status === 'existing' ? 5 : 0), f]);
+  }
   hits.sort((a, b) => a[0] - b[0]);
   box.innerHTML = hits.length
     ? `<p class="results-head">${hits.length === 1 ? t('res.one') : t('res.count', { n: hits.length })}</p><ul class="list">${hits.slice(0, 40).map(([, f]) => itemHTML(f)).join('')}</ul>`
     : `<p class="empty">${t('res.none', { q: esc(q) })}</p>`;
   box.hidden = false;
   $('#home').hidden = true;
-  box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(Number(b.dataset.id))));
+  $('#devHome').hidden = true;
+  box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
 }
 
 async function share(name) {
@@ -1100,10 +1177,14 @@ function changeLang(code) {
   applyStaticText();
   const label = LANGS.find((l) => l.code === code)?.label;
   if (!plan) return;
+  $('#popHint').textContent = t('dev.popHint', { n: fmtPeople(popData.total) });
   renderStats();
   renderLayers();
   if (state.dept) setDept(state.dept, { move: false });
-  if (state.selected) renderDetail(byId.get(state.selected));
+  if (state.selected && byId.has(state.selected)) renderDetail(byId.get(state.selected));
+  if (state.selected && devById.has(state.selected)) renderDevDetail(devById.get(state.selected));
+  renderDevPanel();
+  if (map.getLayer('dev-labels')) map.setLayoutProperty('dev-labels', 'text-field', devLabelExpr());
   if ($('#search').value) runSearch($('#search').value);
   if (map.getLayer('labels-infra')) map.setLayoutProperty('labels-infra', 'text-field', infraLabel());
   for (const id of ['osm-water', 'osm-towns', 'osm-islands', 'osm-villages', 'osm-suburbs']) map.getLayer(id) && map.setLayoutProperty(id, 'text-field', osmName());
@@ -1113,3 +1194,264 @@ function changeLang(code) {
 }
 
 applyStaticText();
+
+// ---------------------------------------------------------------------------
+// Development layers
+// ---------------------------------------------------------------------------
+const DEV_THEMES = {
+  energy: '#FACC15',
+  water: '#38BDF8',
+  sanitation: '#D6A26B',
+  agri: '#84CC16',
+  housing: '#FB7185',
+  economy: '#E879F9',
+  connectivity: '#818CF8',
+  health: '#2DD4BF',
+  resilience: '#EF4444',
+  environment: '#22C55E',
+};
+const devColor = ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff'];
+const MINOR_KINDS = ['hospital', 'waterpoint', 'substation', 'university'];
+const devLabelExpr = () => ['match', ['get', 'kind'], ...DEV_KIND_KEYS.flatMap((k) => [k, ['concat', t(`kind.${k}`), ' · ', ['coalesce', ['get', 'place'], '']]]), ['coalesce', ['get', 'place'], '']];
+const DEV_KIND_KEYS = ['solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross'];
+
+function fmtPeople(n) {
+  if (n == null) return '—';
+  if (n >= 1e6) return `${(n / 1e6).toLocaleString(locale(), { maximumFractionDigits: 1 })} M`;
+  if (n >= 10000) return (Math.round(n / 1000) * 1000).toLocaleString(locale());
+  if (n >= 1000) return (Math.round(n / 100) * 100).toLocaleString(locale());
+  return Math.round(n).toLocaleString(locale());
+}
+
+function addDevLayers() {
+  map.addSource('dev', { type: 'geojson', data: dev });
+  map.addSource('pop', { type: 'geojson', data: { type: 'FeatureCollection', features: popData.points.map(([x, y, v]) => ({ type: 'Feature', properties: { v }, geometry: { type: 'Point', coordinates: [x, y] } })) } });
+  const before = 'casing-local';
+  map.addLayer({ id: 'pop-heat', type: 'heatmap', source: 'pop', maxzoom: 14, layout: { visibility: 'none' }, paint: {
+    'heatmap-weight': ['interpolate', ['linear'], ['get', 'v'], 0, 0, 3000, 0.35, 30000, 1],
+    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 6, 0.9, 11, 2],
+    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 6, 9, 9, 22, 12, 60],
+    'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)', 0.15, 'rgba(250,204,21,0.35)', 0.4, 'rgba(245,158,11,0.6)', 0.7, 'rgba(239,68,68,0.75)', 1, 'rgba(255,255,255,0.9)'],
+    'heatmap-opacity': 0.75,
+  } }, before);
+  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
+  const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
+  map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 12, 2.2] } });
+  map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
+  // Utility backbones laid in the same right of way as the rail + highway corridors (offset either side).
+  const corridor = ['==', ['get', 'mode'], RAIL_MODE];
+  map.addLayer({ id: 'backbone-power', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: corridor, paint: { 'line-color': DEV_THEMES.energy, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7], 'line-dasharray': [4, 2] } });
+  map.addLayer({ id: 'backbone-fiber', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: ['any', corridor, ['all', ['==', ['get', 'category'], 'ring'], ['==', ['get', 'tier'], 'national']]], paint: { 'line-color': DEV_THEMES.connectivity, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, -3, 12, -7], 'line-dasharray': [1, 1.5] } });
+  const pt = ['==', ['geometry-type'], 'Point'];
+  const proposed = ['==', ['get', 'status'], 'proposed'];
+  const circlePaint = {
+    'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['case', proposed, 4.5, 2.5], 12, ['case', proposed, 9, 5.5]],
+    'circle-color': ['case', proposed, devColor, '#0d1117'],
+    'circle-stroke-color': ['case', proposed, '#ffffff', devColor],
+    'circle-stroke-width': ['case', proposed, 2, 2],
+  };
+  map.addLayer({ id: 'dev-points-minor', type: 'circle', source: 'dev', minzoom: 9.5, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]], ['!=', ['get', 'major'], true]], paint: circlePaint });
+  map.addLayer({ id: 'dev-points-main', type: 'circle', source: 'dev', filter: ['all', pt, ['!=', ['get', 'kind'], 'protectedLabel'], ['any', ['!', ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], ['==', ['get', 'major'], true]]], paint: circlePaint });
+  map.addLayer({ id: 'dev-sel', type: 'circle', source: 'dev', filter: ['==', ['get', 'id'], ''], paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+  map.addLayer({ id: 'dev-sel-line', type: 'line', source: 'dev', filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 1.4 } });
+}
+
+const DEV_LAYERS = ['dev-fill', 'dev-lines-solid', 'dev-lines-dashed', 'dev-points-minor', 'dev-points-main', 'dev-labels'];
+const DEV_BASE = {};
+function applyDevFilters() {
+  if (!map.getSource('dev')) return;
+  const themes = ['literal', [...state.devThemes]];
+  const status = ['literal', [...state.devStatus]];
+  for (const id of DEV_LAYERS) {
+    if (!map.getLayer(id)) continue;
+    DEV_BASE[id] ??= map.getFilter(id);
+    map.setFilter(id, ['all', DEV_BASE[id], ['in', ['get', 'theme'], themes], ['in', ['get', 'status'], status]]);
+  }
+  const showProposed = state.devStatus.has('proposed');
+  map.setLayoutProperty('backbone-power', 'visibility', state.devThemes.has('energy') && showProposed ? 'visible' : 'none');
+  map.setLayoutProperty('backbone-fiber', 'visibility', state.devThemes.has('connectivity') && showProposed ? 'visible' : 'none');
+  map.setLayoutProperty('pop-heat', 'visibility', state.pop ? 'visible' : 'none');
+}
+
+function togglePop() {
+  state.pop = !state.pop;
+  applyDevFilters();
+  renderDevPanel();
+}
+
+function setTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  $('#home').hidden = tab !== 'plan' || !$('#results').hidden;
+  $('#devHome').hidden = tab !== 'dev' || !$('#results').hidden;
+  if (tab === 'dev' && !setTab.opened) {
+    setTab.opened = true;
+    if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing'].forEach((k) => state.devThemes.add(k));
+    applyDevFilters();
+  }
+  renderDevPanel();
+  if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
+}
+
+function renderDevPanel() {
+  if (!dev) return;
+  const counts = {};
+  for (const f of dev.features) {
+    const p = f.properties;
+    if (p.kind === 'protectedLabel') continue;
+    counts[p.theme] ??= { existing: 0, proposed: 0 };
+    counts[p.theme][p.status]++;
+  }
+  counts.energy.proposed += 1; // the power backbone
+  counts.connectivity.proposed += 1; // the fibre backbone
+  $('#popToggle').classList.toggle('off', !state.pop);
+  $('#popToggle').setAttribute('aria-checked', String(state.pop));
+  document.querySelectorAll('.status-chips .chip').forEach((c) => c.classList.toggle('on', state.devStatus.has(c.dataset.status)));
+  $('#devThemes').innerHTML = Object.entries(DEV_THEMES).map(([k, color]) => {
+    const [name, hint] = t(`theme.${k}`);
+    const on = state.devThemes.has(k);
+    const c = counts[k] ?? { existing: 0, proposed: 0 };
+    return `<li class="layer ${on ? '' : 'off'}" data-k="${k}" role="switch" tabindex="0" aria-checked="${on}">
+      <span class="swatch" style="--c:${color}"><i class="theme"></i></span>
+      <span class="layer-name">${esc(name)}<small>${esc(hint)}</small></span>
+      <span class="layer-meta">${c.existing ? `${fmtPeople(c.existing)} · ` : ''}${c.proposed ? `<b style="color:${color}">${c.proposed}</b>` : ''}</span>
+      <span class="switch"></span></li>`;
+  }).join('');
+  $('#devThemes').querySelectorAll('.layer').forEach((li) => {
+    const toggle = () => {
+      const k = li.dataset.k;
+      state.devThemes.has(k) ? state.devThemes.delete(k) : state.devThemes.add(k);
+      applyDevFilters();
+      renderDevPanel();
+    };
+    li.onclick = toggle;
+    li.onkeydown = (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle());
+  });
+  $('#methodBody').innerHTML = Object.keys(DEV_THEMES).map((k) => `<p><b>${esc(t(`theme.${k}`)[0])}.</b> ${esc(t(`method.${k}`))}</p>`).join('');
+}
+
+function devName(p) {
+  if (p.status === 'proposed') return p.place ? `${t(`kind.${p.kind}`)} · ${p.place}` : t(`kind.${p.kind}`);
+  return p.name ?? t(`kind.${p.kind}`);
+}
+
+function devItemHTML(f) {
+  const p = f.properties;
+  const sub = [t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'), t(`theme.${p.theme}`)[0], p.dept].filter(Boolean).join(' · ');
+  return `<li><button class="item" data-id="${p.id}" style="--c:${DEV_THEMES[p.theme]}">
+      <span class="dotc"></span>
+      <span class="t"><b>${esc(devName(p))}</b><small>${esc(sub)}</small></span>
+      <span class="k"></span></button></li>`;
+}
+
+function devWhy(p) {
+  if (p.status === 'existing') {
+    if (p.approx) return t('dev.approx');
+    if (p.kind === 'fault') return t('why.fault', { slip: p.slip ?? '—' });
+    return t('dev.mapped', { src: t(`src.${p.src}`) });
+  }
+  const v = {
+    ...p,
+    serves: fmtPeople(p.serves), people: fmtPeople(p.people), load: fmtPeople(p.load),
+    km: p.km?.toLocaleString(locale()), km2: p.km2?.toLocaleString(locale()), rail: p.rail?.toLocaleString(locale()),
+    river: '', coast: '', landing: '',
+    fault: p.fault ?? t('kind.fault').toLowerCase(),
+    ring: p.ring ?? '',
+  };
+  if (p.kind === 'waterPlant' && p.river && p.river !== 'canal') v.river = t('why.waterRiver', { river: p.river });
+  if (p.kind === 'sewagePlant' && p.coast) v.coast = t('why.sewageCoast');
+  if (p.kind === 'techHub' && p.landing) v.landing = t('why.techLanding', { landing: p.landing });
+  return t(`why.${p.kind}`, v);
+}
+
+function devFacts(p) {
+  const km = (v) => (v == null ? '—' : `${v.toLocaleString(locale())} km`);
+  const m = (v) => (v == null ? '—' : `${Math.round(v).toLocaleString(locale())} m`);
+  const F = {
+    solar: [['≈50 MW', 'fact.capacity'], [km(p.rail), 'fact.toCorridor'], [fmtPeople(p.load), 'fact.people']],
+    wind: [[m(p.elev), 'fact.elevation']],
+    hydro: [[m(p.head), 'fact.drop'], [km(p.riverKm), 'fact.river']],
+    microgrid: [[fmtPeople(p.people), 'fact.people']],
+    waterPlant: [[fmtPeople(p.serves), 'fact.serves'], [m(p.head), 'fact.head'], [km(p.km), 'fact.distance']],
+    sewagePlant: [[fmtPeople(p.serves), 'fact.serves'], [m(p.drop), 'fact.drop'], [km(p.km), 'fact.distance']],
+    agriZone: [[`${p.km2} km²`, 'fact.area'], [fmtPeople(p.people), 'fact.people']],
+    agriHub: [[`${p.km2} km²`, 'fact.area'], [km(p.rail), 'fact.toCorridor']],
+    tod: [[`${p.km2} km²`, 'fact.area'], [fmtPeople(p.people), 'fact.people']],
+    newTown: [[`${p.km2} km²`, 'fact.area'], [km(p.km), 'fact.distance'], [km(p.rail), 'fact.toCorridor']],
+    techHub: [[fmtPeople(p.people), 'fact.people']],
+    ruralHub: [[km(p.km), 'fact.fromFibre'], [fmtPeople(p.people), 'fact.people']],
+    healthGap: [[fmtPeople(p.people), 'fact.people'], [km(p.km), 'fact.toHospital']],
+    faultCross: [[p.fault ?? '—', 'fact.fault']],
+    floodZone: [[fmtPeople(p.people), 'fact.people'], [`${p.km2} km²`, 'fact.area']],
+    plant: [[p.source ?? '—', 'fact.type'], ...(p.mw ? [[`${p.mw} MW`, 'fact.capacity']] : [])],
+  }[p.kind] ?? [];
+  const facts = F.map(([v, k]) => [v, t(k)]);
+  if (facts.length < 3 && p.dept) facts.push([p.dept, t('fact.dept')]);
+  return facts.slice(0, 3);
+}
+
+function clearDevSelection() {
+  if (!map.getLayer('dev-sel')) return;
+  map.setFilter('dev-sel', ['==', ['get', 'id'], '']);
+  map.setFilter('dev-sel-line', ['==', ['get', 'id'], '']);
+}
+
+function selectDev(id, { move = true } = {}) {
+  const f = devById.get(id);
+  stopFly();
+  clearSelection();
+  state.selected = id;
+  const p = f.properties;
+  // Make sure the chosen feature is visible.
+  if (!state.devThemes.has(p.theme) || !state.devStatus.has(p.status)) {
+    state.devThemes.add(p.theme);
+    state.devStatus.add(p.status);
+    applyDevFilters();
+    renderDevPanel();
+  }
+  const isPt = f.geometry.type === 'Point';
+  map.setFilter('dev-sel', isPt ? ['==', ['get', 'id'], id] : ['==', ['get', 'id'], '']);
+  map.setFilter('dev-sel-line', isPt ? ['==', ['get', 'id'], ''] : ['==', ['get', 'id'], id]);
+  setHashParam('f', id);
+  if (state.collapsed) setCollapsed(false);
+  $('#search').value = '';
+  $('#results').hidden = true;
+  setTab(state.tab);
+  renderDevDetail(f);
+  if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
+  $('#panelBody').scrollTop = 0;
+  if (move) requestAnimationFrame(() => fitFeature(f, isPt ? { zoom: Math.max(map.getZoom(), 11) } : {}));
+}
+
+function renderDevDetail(f) {
+  const p = f.properties;
+  const color = DEV_THEMES[p.theme];
+  const g = f.geometry;
+  const c = g.type === 'Point' ? g.coordinates : [(f._bbox[0] + f._bbox[2]) / 2, (f._bbox[1] + f._bbox[3]) / 2];
+  const gm = `https://www.google.com/maps/search/?api=1&query=${c[1].toFixed(5)},${c[0].toFixed(5)}`;
+  const facts = devFacts(p);
+  const el = $('#detail');
+  el.innerHTML = `
+    <div class="detail-top">
+      <span class="pill" style="--c:${color}">${esc(t(`kind.${p.kind}`))}</span>
+      <button class="icon-btn" id="detailClose" aria-label="${t('btn.close')}">${ICONS.close}</button>
+    </div>
+    <h2>${esc(devName(p))}</h2>
+    <div class="badges">
+      <span class="badge ${p.status}">${t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing')}</span>
+      <span class="badge">${esc(t(`theme.${p.theme}`)[0])}</span>
+    </div>
+    <p class="note">${esc(devWhy(p))}</p>
+    ${facts.length ? `<div class="facts">${facts.map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${esc(k)}</span></div>`).join('')}</div>` : '<div style="height:12px"></div>'}
+    <div class="actions">
+      <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
+      <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t('btn.gmaps')}</a>
+      <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
+    </div>
+    ${p.status === 'proposed' ? `<p class="source">${esc(t('dev.screening'))}</p>` : ''}
+    <p class="source">${esc(t('dev.source', { src: p.status === 'proposed' ? t('src.rules') : t(`src.${p.src}`) }))}</p>`;
+  el.hidden = false;
+  el.querySelector('#detailClose').onclick = clearSelection;
+  el.querySelector('#btnZoom').onclick = () => fitFeature(f, g.type === 'Point' ? { zoom: 13 } : {});
+  el.querySelector('#btnShareF').onclick = () => share(devName(p));
+}

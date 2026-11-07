@@ -1,3 +1,5 @@
+import { DEV } from './i18n-dev.js';
+
 // Interface translations. Place and route names from the plan are proper names and stay as written.
 // Languages: the five most spoken in the Americas, including Haitian Creole.
 
@@ -535,6 +537,8 @@ const S = {
     'name.river': 'Pon sou ',
   },
 };
+
+for (const code of Object.keys(DEV)) Object.assign(S[code], DEV[code]);
 
 let current = 'en';
 

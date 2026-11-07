@@ -5,7 +5,6 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const CACHE = new URL('./.cache/', import.meta.url);
 mkdirSync(CACHE, { recursive: true });
-export const Z = 12;
 
 // Minimal PNG decoder for 8-bit RGB / RGBA, non-interlaced (what Terrarium tiles are).
 function decodePng(buf) {
@@ -53,6 +52,7 @@ function decodePng(buf) {
   return elev;
 }
 
+export function createDem(Z = 12) {
 const tiles = new Map();
 async function tile(x, y) {
   const key = `${Z}-${x}-${y}`;
@@ -71,14 +71,13 @@ async function tile(x, y) {
   return e;
 }
 
-const rad = (d) => (d * Math.PI) / 180;
-export function tileXY(lon, lat) {
+function tileXY(lon, lat) {
   const n = 2 ** Z;
   return [((lon + 180) / 360) * n, ((1 - Math.log(Math.tan(rad(lat)) + 1 / Math.cos(rad(lat))) / Math.PI) / 2) * n];
 }
 
 // Preload every tile a set of points touches (with a margin), so later lookups are synchronous.
-export async function preload(points, marginKm = 8) {
+async function preload(points, marginKm = 8) {
   const need = new Set();
   const m = marginKm / 111;
   for (const [lon, lat] of points) {
@@ -92,7 +91,7 @@ export async function preload(points, marginKm = 8) {
   return list.length;
 }
 
-export function elevation(lon, lat) {
+function elevation(lon, lat) {
   const [fx, fy] = tileXY(lon, lat);
   const tx = Math.floor(fx), ty = Math.floor(fy);
   const e = tiles.get(`${Z}-${tx}-${ty}`);
@@ -100,3 +99,11 @@ export function elevation(lon, lat) {
   const px = Math.min(255, Math.floor((fx - tx) * 256)), py = Math.min(255, Math.floor((fy - ty) * 256));
   return e[py * 256 + px];
 }
+
+return { Z, preload, elevation, tileXY };
+}
+
+const rad = (d) => (d * Math.PI) / 180;
+const fine = createDem(12);
+export const Z = 12;
+export const { preload, elevation, tileXY } = fine;
