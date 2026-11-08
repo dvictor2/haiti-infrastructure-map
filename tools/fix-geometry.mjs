@@ -10,6 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { preload, elevation } from './dem.mjs';
 import { LAND_CATS, SEA_LEVEL, densify, nearestOnLine, pointInRing, haversine, kx, KY, r5 } from './geo.mjs';
+import { onLand, landId } from './coast.mjs';
 
 const plan = JSON.parse(readFileSync(new URL('../data/plan.geojson', import.meta.url)));
 // Mapped lakes and bays. Shallow bays read as land in the elevation model, so their outlines are used too.
@@ -21,10 +22,15 @@ await preload(land.flatMap((f) => f.geometry.coordinates), 8);
 const LAND_MIN = 1; // metres above sea level that counts as safely dry when moving a point
 const INLAND = 0.12; // km to stay back from the shoreline
 const inLake = (p) => lakes.some((r) => pointInRing(p, r));
-// "Wet" = clearly below sea level in the elevation model (sea) or inside a mapped lake.
+// "Wet" = clearly below sea level in the elevation model, inside a mapped lake, or outside the OpenStreetMap
+// coastline (shallow bays like Jacmel's read as about 0 m in the elevation model, so the coastline catches them).
 // Flat coastal plains read as about 0 m, so the sea threshold sits a little below that.
-const isWater = (p) => !(elevation(p[0], p[1]) >= SEA_LEVEL) || inLake(p);
-const isDry = (p) => elevation(p[0], p[1]) >= LAND_MIN && !inLake(p);
+// The coastline test can be switched off, so each route can be fixed both ways and the better result kept.
+let useCoast = true;
+// The island(s) the route being fixed was drawn on; land on any other island (or islet) does not count as dry.
+let home = null;
+const isWater = (p) => !(elevation(p[0], p[1]) >= SEA_LEVEL) || inLake(p) || (useCoast && !onLand(p));
+const isDry = (p) => elevation(p[0], p[1]) >= LAND_MIN && !inLake(p) && (!useCoast || (onLand(p) && (!home || home.has(landId(p)))));
 const offset = (p, dxKm, dyKm) => [p[0] + dxKm / kx(p[1]), p[1] + dyKm / KY];
 
 // Nearest dry point to p, searching only directions within ±75° of `prefer` (unit vector) when given.
@@ -128,9 +134,15 @@ function simplifyDry(coords, tol) {
 
 // Rings keep their compact shape: wet parts are pulled in toward the town centre until dry,
 // so a coastal Périphérique becomes a "D" along the shore instead of looping around the bay.
+// The town a ring is drawn around (its centre is in the sea when the ring loops over a bay, e.g. Miragoâne).
+const towns = plan.features.filter((f) => f.geometry.type === 'Point' && ['city', 'town'].includes(f.properties.category)).map((f) => f.geometry.coordinates);
 function fixRing(coords) {
   const n = coords.length - 1;
-  const center = [coords.slice(0, n).reduce((s, p) => s + p[0], 0) / n, coords.slice(0, n).reduce((s, p) => s + p[1], 0) / n];
+  let center = [coords.slice(0, n).reduce((s, p) => s + p[0], 0) / n, coords.slice(0, n).reduce((s, p) => s + p[1], 0) / n];
+  if (isWater(center)) {
+    const inside = towns.filter((t) => pointInRing(t, coords) && !isWater(t)).sort((a, b) => haversine(a, center) - haversine(b, center));
+    if (inside[0]) center = inside[0];
+  }
   const pts = densify(coords, 0.08).map((p) => {
     if (!isWater(p)) return p;
     for (let t = 0.97; t >= 0.05; t -= 0.03) {
@@ -192,19 +204,64 @@ const wetKm = (coords) => {
 // ---- 1. Water
 const fixed = new Map(); // id -> coords
 const report = [];
+const lineKm = (c) => c.slice(1).reduce((s, p, i) => s + haversine(c[i], p), 0);
 for (const f of land) {
   const c = f.geometry.coordinates;
   const closed = f.properties.category === 'ring';
+  const run = () => tidy(closed ? fixWater(fixRing(c), true).coords : fixWater(c, false).coords, closed);
+  // 1. Elevation-only fix (sea well below 0 m, lakes) — the long-standing method.
+  useCoast = false;
+  const elevBefore = wetKm(c);
+  const plain = elevBefore >= 0.05 ? run() : c;
+  // 2. Coastline-aware fix, which also catches shallow bays. Kept only when it is clearly better:
+  //    less water by the coastline and no big detour (mangrove shores can make it scribble).
+  useCoast = true;
+  home = new Set(densify(c, 0.2).map(landId).filter((x) => x != null));
   const before = wetKm(c);
   if (before < 0.05) continue;
-  const coords = tidy(closed ? fixWater(fixRing(c), true).coords : fixWater(c, false).coords, closed);
-  const after = wetKm(coords);
+  const plainWet = wetKm(plain);
+  // For rings, also try only pulling the wet parts toward the town (no shoreline search), which stays clean
+  // around bays full of small mangrove islets; keep the drier of the two.
+  let coast = run();
+  let coastWet = wetKm(coast);
+  if (closed) {
+    const pulled = tidy(fixRing(c), true);
+    const pulledWet = wetKm(pulled);
+    if (pulledWet < coastWet || lineKm(coast) > lineKm(plain) * 1.15 + 0.3) [coast, coastWet] = [pulled, pulledWet];
+  }
+  // …and it must stay on the island(s) it was drawn on: never jump across a channel (e.g. onto La Tortue).
+  const strays = densify(coast, 0.2).some((q) => { const id = landId(q); return id != null && !home.has(id); });
+  const better = coastWet < plainWet - 0.05 && lineKm(coast) <= lineKm(plain) * 1.15 + 0.3 && !strays;
+  if (process.env.DEBUG_FIX && f.properties.name.includes(process.env.DEBUG_FIX)) console.log("DEBUG", f.properties.name, { plainWet, coastWet, plainKm: lineKm(plain), coastKm: lineKm(coast), strays, home: [...home] });
+  const coords = better ? coast : plain;
+  if (coords === c) continue;
+  const after = better ? coastWet : plainWet;
   fixed.set(f.properties.id, coords);
   report.push({ id: f.properties.id, name: f.properties.name, cat: f.properties.category, tier: f.properties.tier, water: [before, after] });
 }
 
+home = null;
+
 // ---- 2. Loose ends: snap to the nearest other route or ring within reach.
 const geom = (f) => fixed.get(f.properties.id) ?? f.geometry.coordinates;
+// Bridges and ferries that stop in open water (e.g. the Tortue ferry, drawn ending mid-channel) are extended
+// to the nearest shore, so their terminals sit on land.
+const landings = [];
+for (const f of plan.features.filter((x) => x.geometry.type === 'LineString' && ['bridge', 'ferry'].includes(x.properties.category))) {
+  const c = [...geom(f)];
+  let changed = false;
+  for (const end of [c.length - 1, 0]) {
+    if (!isWater(c[end])) continue;
+    const q = nearestLand(c[end], null);
+    if (!q || haversine(q, c[end]) > 6) continue;
+    landings.push({ name: f.properties.name, km: haversine(q, c[end]) });
+    if (end === 0) c.unshift(q);
+    else c.push(q);
+    changed = true;
+  }
+  if (changed) fixed.set(f.properties.id, c);
+}
+if (landings.length) console.log('crossings extended to shore:', landings.map((l) => `${l.name} (${l.km.toFixed(1)} km)`).join('; '));
 const targets = plan.features.filter((f) => f.geometry.type === 'LineString' && !['water', 'border'].includes(f.properties.category) && !f.properties.derived);
 const SNAP_MAX = 2; // km: further than this, the end is a real terminus (a village, a border post)
 const SNAP_MIN = 0.03;
@@ -216,7 +273,8 @@ for (let pass = 0; pass < 2; pass++) for (const f of [...land, ...crossings]) {
   const overWater = ['bridge', 'ferry'].includes(f.properties.category);
   const c = [...geom(f)];
   let changed = false;
-  for (const end of [0, c.length - 1]) {
+  // The far end first: adding a connector at the start shifts every index after it.
+  for (const end of [c.length - 1, 0]) {
     let best = null;
     for (const o of targets) {
       if (o === f || (overWater && ['bridge', 'ferry'].includes(o.properties.category))) continue;

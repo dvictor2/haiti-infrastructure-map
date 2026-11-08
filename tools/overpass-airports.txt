@@ -1,0 +1,7 @@
+[out:json][timeout:120];
+area["ISO3166-1"="HT"][admin_level=2]->.ht;
+(
+  nwr["aeroway"="aerodrome"](area.ht);
+  way["aeroway"="runway"](area.ht);
+);
+out tags geom;

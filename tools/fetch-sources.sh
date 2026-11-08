@@ -17,3 +17,6 @@ curl -sS -m 200 -A "haiti-infrastructure-map (planning map)" --data-urlencode da
 echo done
 # Named rivers — OpenStreetMap
 curl -sS -m 200 -A "haiti-infrastructure-map (planning map)" --data-urlencode data@../../overpass-rivers.txt https://overpass-api.de/api/interpreter -o rivers.json
+# Coastline (land test for fix-geometry) and airfields/runways — OpenStreetMap
+curl -sS -m 200 -A "haiti-infrastructure-map (planning map)" --data-urlencode data@../../overpass-coast.txt https://overpass-api.de/api/interpreter -o coast.json
+curl -sS -m 200 -A "haiti-infrastructure-map (planning map)" --data-urlencode data@../../overpass-airports.txt https://overpass-api.de/api/interpreter -o airports.json

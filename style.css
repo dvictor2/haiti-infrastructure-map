@@ -653,3 +653,20 @@ details.credits p { margin: 8px 0 0; }
 .profile svg { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
 .profile-head, .profile-stats { -webkit-user-select: none; user-select: none; }
 @media (max-width: 760px) { .profile svg { height: 120px; } }
+
+/* Cost under the length in route lists, and the department total. */
+.item .k { text-align: right; }
+.item .k .cost-k { display: block; color: #FDE68A; font-size: 11.5px; margin-top: 1px; }
+.dept-cost { color: #FDE68A !important; display: flex; align-items: center; margin: -4px 0 10px !important; }
+@media (max-width: 760px) { .item .k .cost-k { font-size: 13px; } }
+
+/* ---------- Resizable panel (computers) ---------- */
+.panel-resizer { position: absolute; top: 14px; bottom: 14px; right: 0; width: 8px; cursor: ew-resize; z-index: 3; touch-action: none; }
+.panel-resizer:hover, body.resizing .panel-resizer { background: linear-gradient(90deg, transparent 3px, rgba(52, 211, 153, 0.55) 3px, rgba(52, 211, 153, 0.55) 5px, transparent 5px); }
+.edge-tab { cursor: ew-resize; touch-action: none; left: min(calc(12px + var(--panel-w) - 1px), calc(100vw - 26px)); }
+.edge-tab.collapsed { cursor: pointer; }
+body.resizing, body.resizing * { cursor: ew-resize !important; user-select: none !important; }
+body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
+/* A wide panel keeps text at a readable width. */
+.panel.wide .panel-body > section, .panel.wide #detail, .panel.wide #page { max-width: 980px; }
+@media (max-width: 760px) { .panel-resizer { display: none; } }

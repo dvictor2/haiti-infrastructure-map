@@ -53,3 +53,13 @@ OpenStreetMap tags many small clinics as hospitals; health gaps are measured to 
 sh tools/fetch-sources.sh     # downloads the open data into tools/.cache/raw (not committed)
 node tools/build-dev.mjs      # writes data/dev.geojson, data/pop.json, data/stats.json
 ```
+
+## Airports
+
+Built by `node tools/build-airports.mjs` → `data/airports.geojson` (needs `tools/.cache/raw/airports.json`, downloaded with `tools/overpass-airports.txt`).
+
+- **Existing**: every aerodrome and runway mapped in OpenStreetMap, with mapped runway length and surface.
+- **Upgrades** (1,800 m paved): one regional airport per department, at the airfield nearest its capital (within 35 km, same department). Môle-Saint-Nicolas is included for its strategic deep-water bay. Island strips (La Gonâve, Île-à-Vache) are paved for all-weather use (at least 1,200 m).
+- **National cargo & backup airport** (3,200 m): a flat site within 10 km of the planned rail network, 50–150 km from Port-au-Prince and over 60 km from Cap-Haïtien, with the most people within 60 km. It gives Haiti a second long runway if Port-au-Prince airport closes.
+- **New regional airports** (2,000 m): first for each department capital with no airport within 30 km, on the flattest suitable land within 20 km; then wherever over 150,000 people still live more than 45 km from a paved runway (at most 3 more), kept at least 30 km from other airports.
+- **Suitable land**: below 250 m, a runway-length strip in one of 8 directions whose ground varies by 20 m or less (Mapzen terrain), at least 300 m from mapped rivers, outside dense towns, within 15 km of the planned rail network.

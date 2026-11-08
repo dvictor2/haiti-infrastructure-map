@@ -23,7 +23,7 @@ node tools/build-data.mjs           # final map data with the fixes applied
 node tools/qa-geometry.mjs          # optional: report what still crosses water
 ```
 
-`build-data` works out categories, departments, lengths, ring stations (Portes), ferry terminals and river bridges. `fix-geometry` uses public elevation data (Mapzen Terrarium on AWS) to find stretches over water; what it changed is listed in `docs/geometry-fixes.md`. The original drawing is never modified.
+`build-data` works out categories, departments, lengths, ring stations (Portes), ferry terminals and river bridges. `fix-geometry` uses public elevation data (Mapzen Terrarium on AWS) and the OpenStreetMap coastline (which catches shallow bays such as Jacmel's) to find stretches over water; a coastline fix is kept only when it is clearly better and never moves a road onto another island; what it changed is listed in `docs/geometry-fixes.md`. The original drawing is never modified.
 
 ## Development layers
 
@@ -52,6 +52,10 @@ The Development tab's **Hazards** section shows:
 
 - **Hurricane tracks**: every North Atlantic storm since 1950 that passed within 250 km of Haiti, from NOAA NCEI IBTrACS v04r01 (public domain). Built by `node tools/build-hazards.mjs` → `data/storms.json`. Active storms and their forecast cones come live from the NOAA National Hurricane Center map service.
 - **Earthquakes**: magnitude 4.5 and above since 1900 around Hispaniola, fetched live from the USGS ComCat catalog.
+
+## Airports
+
+Existing airfields (OpenStreetMap) and screening-level airport proposals: one regional airport per department, island strips paved, a national cargo & backup airport, and new airports where people live far from any paved runway. Rules in [`docs/development-method.md`](docs/development-method.md); built by `node tools/build-airports.mjs`.
 
 ## Map engine
 

@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { preload, elevation } from './dem.mjs';
 import { LAND_CATS, SEA_LEVEL, densify, distToLine, pointInRing, haversine } from './geo.mjs';
+import { onLand } from './coast.mjs';
 
 const file = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? new URL('../data/plan.geojson', import.meta.url);
 const plan = JSON.parse(readFileSync(file));
@@ -20,7 +21,7 @@ for (const f of lines) {
   for (let i = 1; i < pts.length; i++) {
     const mid = [(pts[i - 1][0] + pts[i][0]) / 2, (pts[i - 1][1] + pts[i][1]) / 2];
     const step = haversine(pts[i - 1], pts[i]);
-    if (elevation(...mid) < SEA_LEVEL) sea += step;
+    if (elevation(...mid) < SEA_LEVEL || !onLand(mid)) sea += step;
     else if (lakes.some((l) => pointInRing(mid, l.geometry.coordinates[0]))) lake += step;
   }
   const c = f.geometry.coordinates;

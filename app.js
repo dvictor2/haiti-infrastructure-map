@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261112b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261114a';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -342,11 +342,14 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 const getJSON = (u) => fetch(u).then((r) => r.json());
-const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson')]);
+const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
 map.on('load', async () => {
-  [plan, depts, dev, popData, stats, rivers] = await dataReady;
+  let airports;
+  [plan, depts, dev, popData, stats, rivers, airports] = await dataReady;
+  // Airports (tools/build-airports.mjs) join the Development features as their own theme.
+  dev.features.push(...airports.features);
   for (const f of dev.features) {
     f._bbox = bboxOf(flatCoords(f.geometry));
     devById.set(f.properties.id, f);
@@ -495,10 +498,11 @@ const ICO = {
   depth: '<path d="M12 4v13M6 11l6 6 6-6M4 20h16"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   home: '<path d="M4 11 12 4l8 7v9H4Z"/>',
+  plane: '<path d="M10.5 3.5a1.5 1.5 0 0 1 3 0V9l7 4v2l-7-2v4.5l2 1.5v1.5l-3.5-1-3.5 1V19l2-1.5V13l-7 2v-2l7-4Z"/>',
 };
 const ico = (name) => (ICO[name] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[name]}</svg>` : '');
 const CAT_ICON = { corridor: 'train', trunk: 'train', bridge: 'bridge', ferry: 'ship', ring: 'ring', urban: 'bus', feeder: 'road', station: 'station', terminal: 'anchor', rivercross: 'bridge', toll: 'coin', water: 'drop', border: 'flag', city: 'city', town: 'town', site: 'shield' };
-const THEME_ICON = { energy: 'bolt', water: 'drop', sanitation: 'pipe', agri: 'leaf', housing: 'home', economy: 'briefcase', connectivity: 'wifi', health: 'hospital', resilience: 'alert', environment: 'tree', strategic: 'shield' };
+const THEME_ICON = { energy: 'bolt', water: 'drop', sanitation: 'pipe', agri: 'leaf', housing: 'home', economy: 'briefcase', connectivity: 'wifi', health: 'hospital', resilience: 'alert', environment: 'tree', strategic: 'shield', air: 'plane' };
 const ENG_ICON = { surface: 'road', mountain: 'mountain', viaduct: 'bridge', tunnel: 'tunnel' };
 
 class ButtonsControl {
@@ -884,7 +888,7 @@ function itemHTML(f, right) {
   return `<li><button class="item" data-id="${p.id}" style="--c:${CATS[p.category].color}">
       <span class="ico-c">${ico(CAT_ICON[p.category])}</span>
       <span class="t"><b>${esc(displayName(p))}</b><small>${esc(sub)}</small></span>
-      <span class="k">${right ?? (p.km ? fmtKm(p.km) : '')}</span></button></li>`;
+      <span class="k">${right ?? (p.km ? fmtKm(p.km) : '')}${right == null && f.geometry.type === 'LineString' && engKind(p) ? `<small class="cost-k">≈ ${fmtMoney(routeMid(f))}</small>` : ''}</span></button></li>`;
 }
 
 function renderDetail(f) {
@@ -1207,7 +1211,11 @@ function buildPanel() {
 
   // Hide / show the panel (remembered on this device).
   $('#collapseBtn').onclick = () => setCollapsed(true);
-  $('#edgeTab').onclick = () => setCollapsed(!state.collapsed);
+  $('#edgeTab').onclick = () => {
+    if (panelResize.dragged) return (panelResize.dragged = false);
+    setCollapsed(!state.collapsed);
+  };
+  panelResize();
   $('#edgeTab').title = t('panel.hide');
   $('#allLayers').onclick = () => {
     const optional = CAT_KEYS.filter((k) => !ESSENTIAL.includes(k));
@@ -1433,6 +1441,7 @@ function setDept(name, { move = true, fromBack = false } = {}) {
   card.innerHTML = `<div class="dept-card">
     <h3>${esc(name)}</h3>
     <p>${stats?.depts[name] ? `<b>${t('dev.deptPeople', { n: fmtPeople(stats.depts[name]) })}</b> · ` : ''}${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
+    <p class="dept-cost">${ico('coin')}${t('dept.cost', { cost: fmtMoney(feats.filter((f) => f.geometry.type === 'LineString' && engKind(f.properties)).reduce((sum, f) => sum + routeMid(f), 0)) })}</p>
     <div class="bar">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color};width:${(tt[k].km / roadKm) * 100}%" title="${catLabel(k)}: ${fmtKm(tt[k].km)}"></span>`).join('')}</div>
     <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}">${ico(CAT_ICON[k])}${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
@@ -1579,6 +1588,7 @@ const DEV_THEMES = {
   housing: '#FB7185',
   economy: '#E879F9',
   connectivity: '#818CF8',
+  air: '#93C5FD',
   health: '#2DD4BF',
   resilience: '#EF4444',
   environment: '#22C55E',
@@ -1587,7 +1597,7 @@ const DEV_THEMES = {
 const devColor = ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff'];
 const MINOR_KINDS = ['clinic', 'waterKiosk', 'waterTower', 'substation', 'university'];
 const devLabelExpr = () => ['match', ['get', 'kind'], ...DEV_KIND_KEYS.flatMap((k) => [k, ['concat', t(`kind.${k}`), ' · ', ['coalesce', ['get', 'place'], '']]]), ['coalesce', ['get', 'place'], '']];
-const DEV_KIND_KEYS = ['securityPost', 'coastGuard', 'protectZone', 'defenceBase', 'researchAgri', 'seismicStation', 'solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross'];
+const DEV_KIND_KEYS = ['securityPost', 'coastGuard', 'protectZone', 'defenceBase', 'researchAgri', 'seismicStation', 'solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross', 'airportUpgrade', 'airportHub', 'airportNew'];
 
 function fmtPeople(n) {
   if (n == null) return '—';
@@ -1610,7 +1620,7 @@ function addDevLayers() {
   } }, before);
   map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
   const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
-  map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 12, 2.2] } });
+  map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal', 'runway']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'kind'], 'runway', 2.5, 0.8], 12, ['match', ['get', 'kind'], 'runway', 9, 2.2], 15, ['match', ['get', 'kind'], 'runway', 40, 3]] } });
   map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
   // Utility backbones laid in the same right of way as the rail + highway corridors (offset either side).
   const corridor = ['==', ['get', 'mode'], RAIL_MODE];
@@ -1662,7 +1672,7 @@ function setTab(tab) {
   syncPage();
   if (tab === 'dev' && !setTab.opened) {
     setTab.opened = true;
-    if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing'].forEach((k) => state.devThemes.add(k));
+    if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing', 'air'].forEach((k) => state.devThemes.add(k));
     applyDevFilters();
   }
   renderDevPanel();
@@ -1740,6 +1750,15 @@ function devWhy(p) {
   if (p.kind === 'sewagePlant' && p.coast) v.coast = t('why.sewageCoast');
   if (p.kind === 'techHub' && p.landing) v.landing = t('why.techLanding', { landing: p.landing });
   if (p.kind === 'borderZone' && !p.corridor) return t('why.borderMarket', v);
+  if (p.kind === 'airportUpgrade') {
+    const w = { ...v, runway: p.runway?.toLocaleString(locale()), current: p.current?.toLocaleString(locale()) ?? '—', field: p.field };
+    if (p.island) return t('why.airportIsland', w);
+    if (p.strategic) return t('why.airportStrategic', w);
+    return t('why.airportUpgrade', { ...w, capital: p.capital ?? p.place });
+  }
+  if (['airportNew', 'airportHub'].includes(p.kind)) v.runway = p.runway?.toLocaleString(locale());
+  if (p.kind === 'airportNew' && p.capital) return t('why.airportCapital', v);
+  if (p.kind === 'runway') return t('why.runway', { ...v, runway: p.runway?.toLocaleString(locale()) });
   return t(`why.${p.kind}`, v);
 }
 
@@ -1769,6 +1788,13 @@ function devFacts(p) {
     mineralBelt: [[`${p.km2} km²`, 'fact.area']],
     forestZone: [[`${p.km2} km²`, 'fact.area']],
     plant: [[p.source ?? '—', 'fact.type'], ...(p.mw ? [[`${p.mw} MW`, 'fact.capacity']] : [])],
+    airportIntl: [[p.runway ? m(p.runway) : '—', 'fact.runway'], [t(`surf.${p.surface}`) === `surf.${p.surface}` ? p.surface ?? '—' : t(`surf.${p.surface}`), 'fact.surface'], ...(p.iata ? [[p.iata, 'fact.iata']] : [])],
+    airfield: [[p.runway ? m(p.runway) : '—', 'fact.runway'], [p.surface ? (t(`surf.${p.surface}`) === `surf.${p.surface}` ? p.surface : t(`surf.${p.surface}`)) : '—', 'fact.surface'], ...(p.iata ? [[p.iata, 'fact.iata']] : [])],
+    // Island strips: people within 15 km would count the mainland across the channel, so no count there.
+    airportUpgrade: [[m(p.runway), 'fact.runwayPlan'], [p.current ? m(p.current) : '—', 'fact.runwayNow'], ...(p.island ? [] : [[fmtPeople(p.people), 'fact.people15']])],
+    airportHub: [[m(p.runway), 'fact.runwayPlan'], [fmtPeople(p.people), 'fact.people60'], [km(p.rail), 'fact.toCorridor']],
+    airportNew: [[m(p.runway), 'fact.runwayPlan'], [fmtPeople(p.people), 'fact.peopleGain'], [km(p.rail), 'fact.toCorridor']],
+    runway: [[m(p.runway), 'fact.runwayPlan']],
   }[p.kind] ?? [];
   const facts = F.map(([v, k]) => [v, t(k)]);
   if (facts.length < 3 && p.dept) facts.push([p.dept, t('fact.dept')]);
@@ -1916,6 +1942,13 @@ function engineeringHTML(f, s, sm) {
   f._secs = runs;
   // Shares of the sampled points, applied to the route's measured length.
   for (const key of Object.keys(parts)) parts[key] = (parts[key] / n) * km;
+  // Use the precomputed construction mix (tools/build-numbers.mjs) when there is one, so this card, the lists
+  // and Plan in numbers all show the same cost. The live profile still places the sections on the map.
+  const pre = numbers?.routes[p.id];
+  if (pre) {
+    for (const key of Object.keys(parts)) delete parts[key];
+    Object.assign(parts, pre);
+  }
   const mid = Object.entries(parts).reduce((sum, [key, len]) => sum + len * (e.cost[key] ?? e.cost.surface), 0);
   const order = ['surface', 'mountain', 'viaduct', 'tunnel'].filter((key) => parts[key] > 0.05);
   f._eng = { kind: k, parts, mid, order };
@@ -2890,4 +2923,69 @@ function renderHazDetail(f) {
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
   el.querySelector('#btnZoom').onclick = () => fitFeature(f, f.geometry.type === 'Point' ? { zoom: 10 } : { whole: true });
+}
+
+// ---------------------------------------------------------------------------
+// Computers: drag the panel's right edge (or its edge tab) to make it wider, up to the whole screen.
+// A plain click on the tab still hides / shows the panel. The width is remembered on this device.
+// ---------------------------------------------------------------------------
+function panelResize() {
+  if (PHONE.matches) return;
+  const root = document.documentElement;
+  const MIN = 340;
+  const max = () => window.innerWidth - 24;
+  const setW = (w, save) => {
+    const v = Math.round(clamp(w, MIN, max()));
+    root.style.setProperty('--panel-w', `${v}px`);
+    $('#panel').classList.toggle('wide', v > 620);
+    if (save) {
+      try {
+        localStorage.setItem('panelW', String(v));
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  };
+  try {
+    const saved = Number(localStorage.getItem('panelW'));
+    if (saved) setW(saved, false);
+  } catch {
+    /* storage unavailable */
+  }
+  const grip = document.createElement('div');
+  grip.className = 'panel-resizer';
+  grip.title = t('panel.resize');
+  $('#panel').appendChild(grip);
+  $('#edgeTab').title = `${$('#edgeTab').title} · ${t('panel.resize')}`;
+  for (const el of [grip, $('#edgeTab')]) {
+    el.addEventListener('pointerdown', (e) => {
+      if (state.collapsed || e.button !== 0) return;
+      const x0 = e.clientX, w0 = $('#panel').getBoundingClientRect().width;
+      let moved = false;
+      el.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        if (!moved && Math.abs(ev.clientX - x0) < 4) return;
+        moved = true;
+        document.body.classList.add('resizing');
+        // Within 60 px of the right edge it snaps to the full screen.
+        const w = w0 + ev.clientX - x0;
+        setW(w > max() - 60 ? max() : w, false);
+      };
+      const up = () => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        document.body.classList.remove('resizing');
+        if (moved) {
+          panelResize.dragged = el.id === 'edgeTab';
+          setW($('#panel').getBoundingClientRect().width, true);
+        }
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+  }
+  grip.addEventListener('dblclick', () => setW(380, true));
+  window.addEventListener('resize', () => setW($('#panel').getBoundingClientRect().width, false));
 }
