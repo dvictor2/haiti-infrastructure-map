@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116e';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116f';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
