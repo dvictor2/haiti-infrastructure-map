@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-    <link rel="stylesheet" href="style.css?v=20261108c" />
+    <link rel="stylesheet" href="style.css?v=20261109b" />
   </head>
   <body>
     <div id="map" aria-label="Map of Haiti"></div>
@@ -25,10 +25,6 @@
             <h1 data-i18n="app.title">Haiti Infrastructure Plan</h1>
             <p data-i18n="app.subtitle">Swiss Alpine rail + highway network for all 10 departments</p>
           </div>
-          <button class="map-btn" id="mapBtn">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>
-            <span data-i18n="btn.map">Map</span>
-          </button>
           <button class="icon-btn collapse-btn" id="collapseBtn" data-i18n-title="panel.hide" data-i18n-aria="panel.hide" title="Hide panel" aria-label="Hide panel">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
           </button>
@@ -117,6 +113,12 @@
       </div>
     </aside>
 
+    <!-- Phones: floating "Map" button while the panel fills the screen -->
+    <button class="map-btn" id="mapBtn">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>
+      <span data-i18n="btn.map">Map</span>
+    </button>
+
     <button id="edgeTab" class="edge-tab" data-i18n-aria="panel.hide" aria-label="Hide panel">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
     </button>
@@ -134,6 +136,6 @@
     </div>
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <script type="module" src="app.js?v=20261108c"></script>
+    <script type="module" src="app.js?v=20261109b"></script>
   </body>
 </html>

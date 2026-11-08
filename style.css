@@ -282,6 +282,7 @@ button { cursor: pointer; }
   }
   .panel[data-state='peek'] { height: calc(152px + env(safe-area-inset-bottom)); }
   .panel[data-state='full'] { height: 88vh; height: 88dvh; }
+  .panel[data-state='tall'] { height: 75vh; height: 75dvh; }
   .sheet-handle {
     touch-action: none; height: 30px !important;
     display: grid; place-items: center; width: 100%; height: 22px; padding: 0; border: 0; background: none; flex: none;
@@ -399,12 +400,16 @@ button { cursor: pointer; }
 @media (max-width: 760px) {
   .sheet-handle, .brand-row, .tabs { touch-action: none; }
   .panel[data-state='full'] { height: calc(100vh - 6px); height: calc(100dvh - env(safe-area-inset-top, 0px) - 6px); }
-  .panel[data-state='full'] .map-btn {
-    display: inline-flex; align-items: center; gap: 6px; flex: none;
+  /* Floating bottom-middle buttons: "Map" while the panel fills the screen, "Haiti Plan" while it's hidden. */
+  .panel[data-state='full']:not(.collapsed) ~ .map-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    position: fixed; z-index: 30; left: 50%; transform: translateX(-50%);
+    bottom: calc(18px + env(safe-area-inset-bottom));
     border: 1px solid rgba(255, 255, 255, 0.25); background: var(--text); color: var(--bg-solid);
-    border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+    border-radius: 999px; padding: 11px 20px; font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
-  .panel[data-state='full'] #collapseBtn { display: none; }
+  .open-panel { left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom)); border-radius: 999px; padding: 11px 20px 11px 16px; }
 }
 
 /* ---------- Larger text on phones ---------- */
@@ -458,4 +463,18 @@ button { cursor: pointer; }
   .search input { font-size: 17px; }
   .open-panel, .map-btn { font-size: 16px; }
   .lang-menu button { font-size: 16.5px; }
+}
+
+/* Phones: an open item is its own page. Its details replace the title, tabs and home view;
+   Back (phone or ✕) returns to them. */
+@media (max-width: 760px) {
+  .panel.focus .brand-row, .panel.focus .tabs, .panel.focus .search,
+  .panel.focus #home, .panel.focus #devHome, .panel.focus #results { display: none !important; }
+  .panel.focus .panel-head { padding-bottom: 0; }
+  .panel.focus .panel-body { padding-top: 2px; }
+  .panel.focus .detail-top, .panel.focus #detail > h2 { touch-action: none; }
+}
+@media (max-width: 760px) {
+  /* Room so the floating Map button never covers the last lines of the panel. */
+  .panel[data-state='full'] .panel-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }

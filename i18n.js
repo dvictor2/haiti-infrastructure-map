@@ -1,4 +1,4 @@
-import { DEV } from './i18n-dev.js?v=20261108c';
+import { DEV } from './i18n-dev.js?v=20261109b';
 
 // Interface translations. Place and route names from the plan are proper names and stay as written.
 // Languages: the five most spoken in the Americas, including Haitian Creole.

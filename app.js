@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261108c';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261109b';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -505,7 +505,7 @@ function pad() {
   if (PHONE.matches) {
     // Use the sheet's target height (it may still be animating).
     const st = $('#panel').dataset.state;
-    const h = st === 'peek' ? 152 : window.innerHeight * 0.52;
+    const h = st === 'peek' ? 152 : window.innerHeight * (st === 'tall' ? 0.75 : 0.52);
     return { top: 60, left: 24, right: 64, bottom: h + 16 };
   }
   return { top: 60, bottom: 60, left: $('#panel').getBoundingClientRect().right + 40, right: 80 };
@@ -640,7 +640,7 @@ function select(id, { move = true } = {}) {
   clearDevSelection();
   // A city or town picked anywhere (map, search) opens its department, so the panel always reads
   // departments → cities → details. The view to return to is the one from before this tap.
-  if (['city', 'town', 'station'].includes(f.properties.category) && f.properties.dept && state.dept !== f.properties.dept) {
+  if (!PHONE.matches && ['city', 'town', 'station'].includes(f.properties.category) && f.properties.dept && state.dept !== f.properties.dept) {
     const back = closeSelection.saved ?? saveView();
     if (state.tab !== 'plan') setTab('plan');
     setDept(f.properties.dept, { move: false });
@@ -665,12 +665,34 @@ function select(id, { move = true } = {}) {
   setTab(state.tab);
   placeDetail();
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
-  $('#panelBody').scrollTop = 0;
+  openedPage();
   if (move) requestAnimationFrame(() => fitFeature(f));
 }
 
-// Closing (✕, Escape, tapping empty map) returns the camera to where it was before the first selection.
-function closeSelection() {
+// A selected item is its own "page": on phones its details replace the panel's home view, and the
+// browser/phone Back button closes it and returns home. One history entry per visit, however many
+// items are opened in a row.
+function openedPage() {
+  // Picked from search: close the keyboard and step the sheet down so the map shows the item.
+  if (PHONE.matches && document.activeElement === $('#search')) {
+    $('#search').blur();
+    setSheet('half');
+  }
+  if (!history.state?.sel) history.pushState({ ...(history.state ?? {}), sel: true }, '', location.href);
+  setFocus();
+  $('#panelBody').scrollTop = 0;
+}
+function setFocus() {
+  $('#panel').classList.toggle('focus', PHONE.matches && state.selected != null && !$('#detail').hidden);
+}
+window.addEventListener('popstate', () => {
+  if (state.selected != null) closeSelection({ fromBack: true });
+});
+
+// Closing (✕, Back, Escape, tapping empty map) returns the camera to where it was before the first selection.
+function closeSelection({ fromBack = false } = {}) {
+  // Let the history step do the closing, so Back and ✕ always agree.
+  if (!fromBack && history.state?.sel) return history.back();
   const v = closeSelection.saved;
   closeSelection.saved = null;
   clearSelection();
@@ -686,19 +708,21 @@ function clearSelection() {
   $('#detail').innerHTML = '';
   if (profileMarker) profileMarker.remove();
   placeDetail();
+  setFocus();
 }
 
 // With a department open, the panel reads top to bottom: departments → its cities → details.
 // A selected place in that department shows its details in place of the department card.
 function placeDetail() {
   const det = $('#detail');
-  const inDept = state.dept && state.tab === 'plan' && !det.hidden;
+  const inDept = !PHONE.matches && state.dept && state.tab === 'plan' && !det.hidden;
   if (inDept && det.parentElement !== $('#deptSlot')) $('#deptSlot').appendChild(det);
   if (!inDept && det.parentElement !== $('#panelBody')) $('#panelBody').insertBefore(det, $('#home'));
   $('#deptCard').hidden = !!inDept;
   $('#stats').hidden = !!state.dept;
   document.querySelectorAll('#deptCities .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.id) === state.selected));
   if (inDept) $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  setFocus();
 }
 
 function connections(f) {
@@ -1062,17 +1086,24 @@ function buildPanel() {
     const s = $('#panel').dataset.state;
     setSheet(s === 'full' ? 'peek' : 'full');
   };
-  $('#mapBtn').onclick = () => setSheet('peek');
+  // Map (floating, bottom middle, shown while the panel fills the screen): hide the panel to show the
+  // whole map. The "Haiti Plan" button then appears in the same spot to bring it back.
+  $('#mapBtn').onclick = () => {
+    setSheet('peek');
+    setCollapsed(true);
+  };
   // Drag the sheet by its handle, title or tabs: it follows the finger. Up → all the way to the top.
   // Down → back to the small view, or off the screen (the "Haiti Plan" button brings it back).
   // A tap on a tab still works; only a real drag moves the sheet.
   let drag = null;
   let suppressClick = false;
   const sheet = $('#panel');
-  const zones = [$('#sheetHandle'), document.querySelector('.brand-row'), document.querySelector('.tabs')];
-  for (const z of zones) {
+  // The item's header is a drag zone too: on phones it replaces the title box while something is open.
+  const ZONES = '.sheet-handle, .brand-row, .tabs, .detail-top, #detail > h2';
+  {
+    const z = sheet;
     z.addEventListener('pointerdown', (e) => {
-      if (!PHONE.matches) return;
+      if (!PHONE.matches || !e.target.closest(ZONES)) return;
       suppressClick = false;
       drag = { y: e.clientY, h: sheet.getBoundingClientRect().height, state: sheet.dataset.state, moved: false, z, id: e.pointerId };
     });
@@ -1102,7 +1133,7 @@ function buildPanel() {
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 350);
       // Snap to whichever size is closest to where the finger let go: hidden, small, middle or full.
-      const snaps = [['hidden', 40], ['peek', 152], ['half', vh * 0.52], ['full', vh]];
+      const snaps = [['hidden', 40], ['peek', 152], ['half', vh * 0.52], ['tall', vh * 0.75], ['full', vh]];
       const [name] = snaps.reduce((a, b) => (Math.abs(b[1] - released) < Math.abs(a[1] - released) ? b : a));
       if (name === 'hidden') {
         setSheet('peek');
@@ -1597,7 +1628,7 @@ function selectDev(id, { move = true } = {}) {
   setTab(state.tab);
   renderDevDetail(f);
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
-  $('#panelBody').scrollTop = 0;
+  openedPage();
   if (move) requestAnimationFrame(() => fitFeature(f, isPt ? { zoom: Math.max(map.getZoom(), 11) } : {}));
 }
 
