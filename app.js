@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261112a';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261112b';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -1076,9 +1076,17 @@ async function renderProfile(f, token) {
     }
     profileMarker.setLngLat(s[i].p).addTo(map);
   };
-  svg.addEventListener('pointermove', onMove);
-  svg.addEventListener('pointerdown', onMove);
-  svg.addEventListener('pointerleave', () => {
+  // Mouse: hover to read. Finger: press and drag along the graph; the reading stays where you lift off.
+  svg.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    onMove(e);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'mouse' || svg.hasPointerCapture(e.pointerId)) onMove(e);
+  });
+  svg.addEventListener('pointerleave', (e) => {
+    if (e.pointerType !== 'mouse') return;
     cursor.setAttribute('opacity', 0);
     profileMarker?.remove();
   });

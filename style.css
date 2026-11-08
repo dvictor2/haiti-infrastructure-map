@@ -648,3 +648,8 @@ details.credits p { margin: 8px 0 0; }
 /* Labels with an icon: the icon stays beside the words, which wrap next to it. */
 .fact span:has(.ico), .eng-tiles span:has(.ico), .stat span:has(.ico), .cmp span:has(.ico) { display: flex; align-items: flex-start; }
 .fact span .ico, .eng-tiles span .ico, .stat span .ico, .cmp span .ico { margin-top: 1px; }
+
+/* Elevation graph: dragging a finger scrubs the graph (no page scroll, no text selection). */
+.profile svg { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+.profile-head, .profile-stats { -webkit-user-select: none; user-select: none; }
+@media (max-width: 760px) { .profile svg { height: 120px; } }
