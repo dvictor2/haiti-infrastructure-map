@@ -57,6 +57,10 @@ The Development tab's **Hazards** section shows:
 
 Existing airfields (OpenStreetMap) and screening-level airport proposals: one regional airport per department, island strips paved, a national cargo & backup airport, and new airports where people live far from any paved runway. Rules in [`docs/development-method.md`](docs/development-method.md); built by `node tools/build-airports.mjs`.
 
+## 3D up close
+
+From close zoom (or a card's **3D view** button, which circles the object) plan objects appear as simple 3D models generated from their real position and direction: ring stations, ferry terminals and piers, river bridges on pillars, toll plazas, airports (runway with markings, apron, terminal, tower), solar parks, wind farms, small hydro dams, water and sewage plants, logistics hubs. Trains run both ways on every rail corridor, ferries cross, planes take off at the new airports and turbine blades turn. Today's buildings (OpenFreeMap) rise in 3D at street zoom, and national routes carry gentle flow pulses. **Fly along** goes low and close; in the base-tunnel stretches found by the Engineering card it switches to a tunnel drive-through. These are illustrative massing models, not designs.
+
 ## Map engine
 
 MapLibre GL JS 5 with the globe projection: a first visit opens on the whole Earth and swoops down to Haiti; the map flattens as you zoom in.

@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261115c';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116a';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -408,6 +408,7 @@ map.on('load', async () => {
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
   }
   addIconLayers();
+  addModels();
 
   map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } }, 'labels-local');
   map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } }, 'labels-local');
@@ -616,7 +617,16 @@ function pad() {
 // ---------------------------------------------------------------------------
 function pickAt(point) {
   const r = PHONE.matches ? 14 : 6;
-  const hits = map.queryRenderedFeatures([[point.x - r, point.y - r], [point.x + r, point.y + r]], { layers: INTERACTIVE.filter((id) => map.getLayer(id)) });
+  // The moving 3D objects are redrawn many times a second; a lookup that lands mid-redraw can throw.
+  // Layer by layer: if one lookup hiccups (seen with MapLibre symbol layers), the others still answer.
+  const box = [[point.x - r, point.y - r], [point.x + r, point.y + r]];
+  const hits = INTERACTIVE.filter((id) => map.getLayer(id)).flatMap((id) => {
+    try {
+      return map.queryRenderedFeatures(box, { layers: [id] });
+    } catch {
+      return [];
+    }
+  });
   if (!hits.length) return null;
   const rank = (f) => (f.geometry.type === 'Point' ? 0 : f.layer.type === 'line' ? 1 : 2);
   hits.sort((a, b) => rank(a) - rank(b));
@@ -930,6 +940,7 @@ function renderDetail(f) {
       ${isLineF && ROAD_CATS.includes(p.category) && routeEnds(f) ? `<button class="btn" id="btnTripRoute">${ICONS.route} ${t('btn.trip')}</button>` : ''}
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
+      ${hasModel(p) ? `<button class="btn" id="btn3dView">${ico('mountain')} ${t('btn.view3d')}</button>` : ''}
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
       <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
     </div>
@@ -943,6 +954,7 @@ function renderDetail(f) {
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
   el.querySelector('#btnTripRoute')?.addEventListener('click', () => openPage('trip'));
+  el.querySelector('#btn3dView')?.addEventListener('click', () => orbit3D(f));
   el.querySelector('#btnTrip')?.addEventListener('click', () => {
     state.trip.from = canonicalPlace(p.id);
     openPage('trip');
@@ -1108,6 +1120,7 @@ function stopFly() {
   if (!flying) return;
   flying = false;
   cancelAnimationFrame(flyRaf);
+  tunnelOverlay(false);
   map.off('moveend', flyStart);
   $('#flyBar').hidden = true;
 }
@@ -1117,8 +1130,13 @@ function flyAlong(f) {
   const coords = f.geometry.coordinates;
   const cum = f._cum;
   const total = cum.at(-1);
-  const dur = clamp(total * 230, 9000, 50000);
-  const zoom = total < 12 ? 13.6 : total < 40 ? 12.6 : 11.8;
+  // Low and close, to enjoy the scenery (and the 3D models); long routes are capped at about 90 s.
+  const dur = clamp(total * 420, 12000, 90000);
+  const zoom = total < 12 ? 15 : total < 40 ? 14.2 : 13.6;
+  // Tunnel stretches (from the Engineering card's terrain analysis): the camera "drives through" them.
+  const tunnels = (f._secs?.tunnel ?? []).map((run) => [projectOn(f, run[0]).d, projectOn(f, run.at(-1)).d].sort((a, b) => a - b)).filter(([a, b]) => b - a > 0.3);
+  const tName = f.properties.tunnel ? tunnelName(f.properties.tunnel) : displayName(f.properties);
+  const tunnelText = (km) => t('tunnel.inside', { name: tName, km: fmtKm(km) });
   const look = Math.max(1, total * 0.05);
   const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
   let brg = bearing(coords[0], along(coords, cum, look));
@@ -1137,7 +1155,9 @@ function flyAlong(f) {
     const target = bearing(p, along(coords, cum, Math.min(total, d + look)));
     const diff = ((target - brg + 540) % 360) - 180;
     brg = (brg + diff * 0.05 + 360) % 360;
-    map.jumpTo({ center: p, bearing: brg, pitch: 62, zoom });
+    map.jumpTo({ center: p, bearing: brg, pitch: 72, zoom });
+    const inT = tunnels.find(([a, b]) => d >= a && d <= b);
+    tunnelOverlay(!!inT, inT ? tunnelText(inT[1] - inT[0]) : null);
     if (t < 1) flyRaf = requestAnimationFrame(step);
     else {
       stopFly();
@@ -1148,7 +1168,7 @@ function flyAlong(f) {
     if (flying) flyRaf = requestAnimationFrame(step);
   };
   map.once('moveend', flyStart);
-  map.easeTo({ center: coords[0], zoom, pitch: 62, bearing: brg, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 1800, essential: true });
+  map.easeTo({ center: coords[0], zoom, pitch: 72, bearing: brg, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 1800, essential: true });
 }
 $('#flyStop').onclick = stopFly;
 
@@ -1623,7 +1643,7 @@ function addDevLayers() {
   } }, before);
   map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
   const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
-  map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal', 'runway']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'kind'], 'runway', 2.5, 0.8], 12, ['match', ['get', 'kind'], 'runway', 9, 2.2], 15, ['match', ['get', 'kind'], 'runway', 40, 3]] } });
+  map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal', 'runway']]], paint: { 'line-color': devColor, 'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.4, 0.75, 13.2, ['match', ['get', 'kind'], 'runway', 0, 0.75]], 'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'kind'], 'runway', 2.5, 0.8], 12, ['match', ['get', 'kind'], 'runway', 9, 2.2], 15, ['match', ['get', 'kind'], 'runway', 40, 3]] } });
   map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
   // Utility backbones laid in the same right of way as the rail + highway corridors (offset either side).
   const corridor = ['==', ['get', 'mode'], RAIL_MODE];
@@ -1858,6 +1878,7 @@ function renderDevDetail(f) {
     ${facts.length ? `<div class="facts">${facts.map(([v, k]) => factHTML(v, esc(k), k === t('fact.dept') && v === p.dept ? 'dept' : null, '', k === t('fact.dept') ? 'mapf' : null)).join('')}</div>` : '<div style="height:12px"></div>'}
     <div class="actions">
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
+      ${hasModel(p) ? `<button class="btn" id="btn3dView">${ico('mountain')} ${t('btn.view3d')}</button>` : ''}
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t('btn.gmaps')}</a>
       <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
     </div>
@@ -1867,6 +1888,7 @@ function renderDevDetail(f) {
   el.querySelector('#detailClose').onclick = closeSelection;
   el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, g.type === 'Point' ? { zoom: 13 } : { whole: true }));
   el.querySelector('#btnShareF').onclick = () => share(devName(p));
+  el.querySelector('#btn3dView')?.addEventListener('click', () => orbit3D(f));
   wireActs(el, f);
 }
 
@@ -3100,4 +3122,305 @@ function addIconLayers() {
   // Proposed sites draw above existing ones.
   map.addLayer({ id: 'icons-dev-minor', type: 'symbol', source: 'dev', minzoom: 12, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
   map.addLayer({ id: 'icons-dev-main', type: 'symbol', source: 'dev', minzoom: 9.5, filter: ['all', pt, ['!', ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
+}
+
+// ===========================================================================
+// 3D up close: simple models of plan objects, moving trains / ferries / planes / turbine blades,
+// today's buildings, flow pulses on national routes, and a slow orbiting "3D view".
+// Models are extruded footprints (MapLibre fill-extrusion), generated from each object's real position and
+// direction. They appear only when zoomed in close (or from a card's 3D view button).
+// ===========================================================================
+const M3D = { minzoom: 13, features: [], movers: [], trains: [], ferries: [], planes: [], turbines: [] };
+const mOff = (p, east, north) => [p[0] + east / (111320 * Math.cos(rad(p[1]))), p[1] + north / 110570];
+// Rectangle centred on p: `len` m along the bearing `brg` (degrees), `wid` m across, shifted (dx along, dy across).
+function mRect(p, brg, len, wid, dx = 0, dy = 0) {
+  const a = rad(brg);
+  const u = [Math.sin(a), Math.cos(a)], v = [Math.cos(a), -Math.sin(a)];
+  const at = (s, t) => mOff(p, u[0] * s + v[0] * t, u[1] * s + v[1] * t);
+  const c = [at(dx - len / 2, dy - wid / 2), at(dx + len / 2, dy - wid / 2), at(dx + len / 2, dy + wid / 2), at(dx - len / 2, dy + wid / 2)];
+  return [[...c, c[0]]];
+}
+function mOct(p, r, east = 0, north = 0) {
+  const c = mOff(p, east, north);
+  const ring = Array.from({ length: 9 }, (_, i) => mOff(c, r * Math.cos((i * Math.PI) / 4), r * Math.sin((i * Math.PI) / 4)));
+  return [ring];
+}
+const mBox = (coords, b, h, c) => ({ type: 'Feature', properties: { b, h, c }, geometry: { type: 'Polygon', coordinates: coords } });
+// Direction (degrees) of the nearest line at p, from a set of plan line features.
+function dirAt(p, lines) {
+  let best = null;
+  for (const f of lines) {
+    const b = f._bbox;
+    if (p[0] < b[0] - 0.02 || p[0] > b[2] + 0.02 || p[1] < b[1] - 0.02 || p[1] > b[3] + 0.02) continue;
+    const r = projectOn(f, p);
+    if (!best || r.dist < best.r.dist) best = { f, r };
+  }
+  if (!best) return 0;
+  const { f, r } = best;
+  const c = f.geometry.coordinates, cum = f._cum;
+  return bearing(along(c, cum, Math.max(0, r.d - 0.03)), along(c, cum, Math.min(cum.at(-1), r.d + 0.03)));
+}
+
+function buildModels() {
+  const out = [];
+  const lines = plan.features.filter((f) => f.geometry.type === 'LineString');
+  const rail = lines.filter((f) => f.properties.mode === RAIL_MODE || f.properties.category === 'ring');
+  const roads = lines.filter((f) => ROAD_CATS.includes(f.properties.category) && f.properties.category !== 'ferry');
+  const C = { concrete: '#cbd5e1', light: '#e2e8f0', grey: '#9ca3af', dark: '#4b5563', glass: '#7dd3fc', roof: '#a8a29e', panel: '#1e3a8a', white: '#f8fafc' };
+  for (const f of plan.features) {
+    if (f.geometry.type !== 'Point') continue;
+    const p = f.geometry.coordinates, k = f.properties.category;
+    if (k === 'station') {
+      const d = dirAt(p, rail);
+      out.push(mBox(mRect(p, d, 170, 10, 0, 9), 0, 1.2, C.grey), mBox(mRect(p, d, 170, 10, 0, -9), 0, 1.2, C.grey));
+      out.push(mBox(mRect(p, d, 150, 34, 0, 0), 7, 8, C.light));
+      for (const s of [-60, -20, 20, 60]) out.push(mBox(mRect(p, d, 1.2, 1.2, s, 0), 0, 7, C.grey));
+      out.push(mBox(mRect(p, d, 56, 26, 0, 38), 0, 12, C.concrete), mBox(mRect(p, d, 56, 3, 0, 24), 2, 10, C.glass));
+    } else if (k === 'terminal') {
+      // Pier toward the ferry line's other end.
+      const ferry = lines.filter((x) => x.properties.category === 'ferry').sort((a, b) => projectOn(a, p).dist - projectOn(b, p).dist)[0];
+      const far = ferry ? [ferry.geometry.coordinates[0], ferry.geometry.coordinates.at(-1)].sort((a, b) => haversine(b, p) - haversine(a, p))[0] : mOff(p, 0, 1000);
+      const d = bearing(p, far);
+      out.push(mBox(mRect(p, d, 70, 44, -30, 0), 0, 12, C.concrete), mBox(mRect(p, d, 70, 3, -30, 23), 2, 10, C.glass));
+      out.push(mBox(mRect(p, d, 190, 20, 100, 0), 0, 2.2, C.grey), mBox(mRect(p, d, 30, 14, 205, 0), 0, 1.5, C.dark));
+    } else if (k === 'rivercross') {
+      const d = dirAt(p, roads);
+      out.push(mBox(mRect(p, d, 240, 24, 0, 0), 10, 12, '#d1d5db'), mBox(mRect(p, d, 240, 1, 0, 11.5), 12, 13.2, C.white), mBox(mRect(p, d, 240, 1, 0, -11.5), 12, 13.2, C.white));
+      for (let s = -110; s <= 110; s += 44) out.push(mBox(mRect(p, d, 4, 16, s, 0), 0, 10, C.grey));
+    } else if (k === 'toll') {
+      const d = dirAt(p, roads);
+      out.push(mBox(mRect(p, d, 24, 80, 0, 0), 5.5, 6.6, CATS.toll.color));
+      for (let s = -32; s <= 32; s += 12.8) out.push(mBox(mRect(p, d, 4, 3, 0, s), 0, 3, C.light));
+    }
+  }
+  // Development objects and airports.
+  const runwayBy = new Map(dev.features.filter((f) => f.properties.kind === 'runway').map((f) => [f.properties.place, f]));
+  for (const f of dev.features) {
+    if (f.geometry.type !== 'Point') continue;
+    const p = f.geometry.coordinates, k = f.properties.kind, prop = f.properties.status === 'proposed';
+    if (['airportHub', 'airportNew'].includes(k) && runwayBy.get(f.properties.place)) {
+      const rw = runwayBy.get(f.properties.place).geometry.coordinates;
+      const mid = [(rw[0][0] + rw[1][0]) / 2, (rw[0][1] + rw[1][1]) / 2];
+      const d = bearing(rw[0], rw[1]);
+      const L = haversine(rw[0], rw[1]) * 1000;
+      // Slabs sit a little above the ground so the terrain never cuts through them.
+      out.push(mBox(mRect(mid, d, L, 45), 0, 2, C.dark));
+      for (let s = -L / 2 + 60; s < L / 2 - 60; s += 60) out.push(mBox(mRect(mid, d, 26, 1, s, 0), 2, 2.2, C.white));
+      for (const e of [-1, 1]) for (const y of [-14, -9, 9, 14]) out.push(mBox(mRect(mid, d, 40, 2, e * (L / 2 - 30), y), 2, 2.2, C.white));
+      out.push(mBox(mRect(mid, d, 360, 150, 0, 170), 0, 1.6, '#6b7280'));
+      out.push(mBox(mRect(mid, d, 300, 60, 0, 290), 0, 16, C.concrete), mBox(mRect(mid, d, 300, 4, 0, 259), 3, 14, C.glass));
+      const tw = mOff(mid, 0, 0);
+      out.push(mBox(mRect(tw, d, 9, 9, 200, 260), 0, 40, C.light), mBox(mRect(tw, d, 15, 15, 200, 260), 40, 46, C.glass));
+      M3D.planes.push({ rw: [rw[0], rw[1]], L, d, phase: Math.random() });
+    } else if (['airportUpgrade', 'airportIntl', 'airfield'].includes(k)) {
+      out.push(mBox(mRect(p, 90, 120, 40, 0, 120), 0, 11, prop ? C.concrete : C.grey), mBox(mRect(p, 90, 8, 8, 80, 150), 0, 26, C.light), mBox(mRect(p, 90, 13, 13, 80, 150), 26, 31, C.glass));
+    } else if (k === 'solar' && prop) {
+      for (let r = 0; r < 12; r++) out.push(mBox(mRect(p, 90, 340, 7, 0, -110 + r * 20), 1, 2.6, C.panel));
+      out.push(mBox(mRect(p, 90, 30, 18, 210, 0), 0, 6, C.light));
+    } else if (k === 'wind' && prop) {
+      for (const e of [-260, 0, 260]) {
+        const base = mOff(p, e, 0);
+        out.push(mBox(mOct(base, 2.6), 0, 80, C.white), mBox(mRect(base, 90, 10, 3.5, 0, 0), 78, 82.5, C.white));
+        M3D.turbines.push({ p: base, phase: Math.random() * 6.28 });
+      }
+    } else if (k === 'hydro' && prop) {
+      out.push(mBox(mRect(p, 90, 150, 16), 0, 30, '#d6d3d1'), mBox(mRect(p, 90, 34, 22, 0, -30), 0, 11, C.concrete));
+    } else if (k === 'waterPlant' && prop) {
+      for (const [x, y] of [[-30, 20], [0, 20], [30, 20], [-30, -12]]) out.push(mBox(mOct(p, 12, x, y), 0, 9, C.concrete));
+      out.push(mBox(mRect(p, 90, 44, 26, 18, -14), 0, 8, C.light));
+    } else if (k === 'sewagePlant' && prop) {
+      for (const x of [-40, 0, 40]) out.push(mBox(mOct(p, 16, x, 0), 0, 3, '#64748b'));
+      out.push(mBox(mRect(p, 90, 40, 20, 0, -40), 0, 7, C.light));
+    } else if (['agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub'].includes(k) && prop) {
+      for (const y of [-55, 0, 55]) out.push(mBox(mRect(p, 90, 110, 42, 0, y), 0, 11, C.roof));
+      out.push(mBox(mRect(p, 90, 160, 60, 150, 0), 0, 0.2, '#6b7280'));
+      if (k === 'techHub') out.push(mBox(mRect(p, 90, 40, 40, -110, 0), 0, 38, C.glass));
+    } else if (['securityPost', 'coastGuard', 'seismicStation', 'researchAgri', 'microgrid', 'ruralHub', 'defenceBase'].includes(k) && prop) {
+      out.push(mBox(mRect(p, 90, 40, 24), 0, 8, C.concrete));
+      if (k === 'coastGuard' || k === 'securityPost') out.push(mBox(mOct(p, 3, 26, 0), 0, 18, C.light));
+    }
+  }
+  // Trains: two per rail corridor (one each way, on either track).
+  for (const f of lines.filter((x) => x.properties.mode === RAIL_MODE)) {
+    M3D.trains.push({ f, dir: 1, off: 3, phase: Math.random() }, { f, dir: -1, off: -3, phase: Math.random() });
+  }
+  for (const f of lines.filter((x) => x.properties.category === 'ferry')) M3D.ferries.push({ f, phase: Math.random() });
+  M3D.features = out;
+}
+
+function addModels() {
+  buildModels();
+  const before = 'labels-lines-local';
+  // Today's buildings, from OpenFreeMap, close up.
+  map.addLayer({ id: 'osm-buildings', type: 'fill-extrusion', source: 'osm', 'source-layer': 'building', minzoom: 14.5, paint: {
+    'fill-extrusion-color': '#a3a3a3', 'fill-extrusion-opacity': 0.75,
+    'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+  } }, before);
+  const paint = { 'fill-extrusion-color': ['get', 'c'], 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 0.96 };
+  map.addSource('models', { type: 'geojson', data: { type: 'FeatureCollection', features: M3D.features } });
+  map.addLayer({ id: 'models', type: 'fill-extrusion', source: 'models', minzoom: M3D.minzoom, paint }, before);
+  map.addSource('movers', { type: 'geojson', data: EMPTY });
+  map.addLayer({ id: 'movers', type: 'fill-extrusion', source: 'movers', minzoom: 12, paint }, before);
+  // Gentle flow pulses along national routes (as in the original Antigravity map).
+  map.addLayer({ id: 'flow-national', type: 'line', source: 'plan', minzoom: 6.5, filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'ring'])], paint: { 'line-color': '#ffffff', 'line-opacity': 0.32, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.8, 12, 2], 'line-dasharray': [0, 4, 3] } }, 'sel-glow');
+  animate3D();
+}
+
+// One animation loop: flow pulses all the time (slowly), moving objects only when zoomed in close.
+function animate3D() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const seq = [[0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0], [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2], [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5]];
+  let flowStep = -1, lastMove = 0;
+  const tick = (ts) => {
+    requestAnimationFrame(tick);
+    if (document.hidden) return;
+    const s = Math.floor(ts / 110) % seq.length;
+    if (s !== flowStep && map.getLayer('flow-national')) {
+      map.setPaintProperty('flow-national', 'line-dasharray', seq[s]);
+      flowStep = s;
+    }
+    if (map.getZoom() < 12 || ts - lastMove < 50) return;
+    lastMove = ts;
+    // Only redraw while something is actually moving on screen.
+    const feats = moversAt(ts / 1000);
+    if (!feats.length && animate3D.empty) return;
+    animate3D.empty = !feats.length;
+    map.getSource('movers')?.setData({ type: 'FeatureCollection', features: feats });
+  };
+  requestAnimationFrame(tick);
+}
+
+function moversAt(time) {
+  const out = [];
+  const b = map.getBounds();
+  const pad = 0.05;
+  const inView = (bb) => !(bb[2] < b.getWest() - pad || bb[0] > b.getEast() + pad || bb[3] < b.getSouth() - pad || bb[1] > b.getNorth() + pad);
+  const near = (p) => p[0] > b.getWest() - pad && p[0] < b.getEast() + pad && p[1] > b.getSouth() - pad && p[1] < b.getNorth() + pad;
+  // Trains: 6 cars of 25 m, 45 m/s, looping along the corridor.
+  for (const tr of M3D.trains) {
+    if (!inView(tr.f._bbox)) continue;
+    const c = tr.f.geometry.coordinates, cum = tr.f._cum, L = cum.at(-1);
+    const head = ((tr.phase * L + time * 0.045) % L + L) % L;
+    for (let i = 0; i < 6; i++) {
+      let s = head - i * 0.027;
+      if (s < 0) continue;
+      if (tr.dir < 0) s = L - s;
+      const p = along(c, cum, s);
+      const d = bearing(along(c, cum, Math.max(0, s - 0.01)), along(c, cum, Math.min(L, s + 0.01)));
+      out.push(mBox(mRect(p, d, 25, 3.4, 0, tr.off), 0.5, 4.6, i === 0 ? '#34D399' : '#e5e7eb'));
+    }
+  }
+  // Ferries: back and forth along the crossing, 25 m/s.
+  for (const fe of M3D.ferries) {
+    if (!inView(fe.f._bbox)) continue;
+    const c = fe.f.geometry.coordinates, cum = fe.f._cum, L = cum.at(-1);
+    const u = ((fe.phase + (time * 0.025) / L) % 2 + 2) % 2;
+    const s = (u < 1 ? u : 2 - u) * L;
+    const p = along(c, cum, s);
+    const d = bearing(along(c, cum, Math.max(0, s - 0.02)), along(c, cum, Math.min(L, s + 0.02)));
+    out.push(mBox(mRect(p, d, 70, 16), 0, 4, '#f8fafc'), mBox(mRect(p, d, 34, 12, -6, 0), 4, 11, '#93c5fd'));
+  }
+  // Planes: take-off roll, lift-off past 60% of the runway, climb out; a 45 s cycle.
+  for (const pl of M3D.planes) {
+    if (!near(pl.rw[0])) continue;
+    const u = ((time / 45 + pl.phase) % 1);
+    const dist = u < 0.55 ? (u / 0.55) ** 2 * pl.L : pl.L + (u - 0.55) * 9000;
+    const alt = Math.max(0, dist - pl.L * 0.6) * 0.18;
+    const p = mOff(pl.rw[0], Math.sin(rad(pl.d)) * dist, Math.cos(rad(pl.d)) * dist);
+    out.push(mBox(mRect(p, pl.d, 38, 4.2), alt + 1, alt + 5, '#f1f5f9'), mBox(mRect(p, pl.d, 5, 34, 2, 0), alt + 2, alt + 3, '#e2e8f0'), mBox(mRect(p, pl.d, 6, 1.2, -16, 0), alt + 4, alt + 10, '#93c5fd'));
+  }
+  // Wind turbine blades turning in the vertical plane (rotor facing the easterly trade winds).
+  for (const tb of M3D.turbines) {
+    if (!near(tb.p)) continue;
+    const a0 = tb.phase + time * 1.6;
+    for (let k = 0; k < 3; k++) {
+      const a = a0 + (k * 2 * Math.PI) / 3;
+      for (let r = 4; r <= 40; r += 6) {
+        const z = 80 + r * Math.sin(a);
+        out.push(mBox(mRect(tb.p, 0, 2.2 + (40 - r) * 0.04, 1.4, r * Math.cos(a), 0), z - 2.2, z + 2.2, '#f8fafc'));
+      }
+    }
+  }
+  return out;
+}
+
+// "3D view": fly in close and slowly circle the object until the map is touched.
+function orbit3D(f) {
+  showMap();
+  stopFly();
+  const g = f.geometry;
+  const center = g.type === 'Point' ? g.coordinates : [(f._bbox[0] + f._bbox[2]) / 2, (f._bbox[1] + f._bbox[3]) / 2];
+  const big = ['airportHub', 'airportNew'].includes(f.properties.kind);
+  if (!state.terrain) toggleTerrain();
+  clearPadding();
+  map.flyTo({ center, zoom: big ? 15.3 : 16.4, pitch: 64, bearing: map.getBearing() - 30, duration: 2600, essential: true });
+  const spin = () => map.easeTo({ bearing: map.getBearing() + 90, duration: 24000, easing: (x) => x, essential: true });
+  map.once('moveend', () => {
+    spin();
+    const id = setInterval(() => (map.isMoving() ? 0 : spin()), 1000);
+    const stop = () => {
+      clearInterval(id);
+      map.stop();
+      for (const ev of ['mousedown', 'touchstart', 'wheel']) map.getCanvasContainer().removeEventListener(ev, stop);
+    };
+    for (const ev of ['mousedown', 'touchstart', 'wheel']) map.getCanvasContainer().addEventListener(ev, stop, { passive: true, once: true });
+    orbit3D.stop = stop;
+  });
+}
+const HAS_MODEL = new Set(['station', 'terminal', 'rivercross', 'toll', 'airportHub', 'airportNew', 'airportUpgrade', 'airportIntl', 'airfield', 'solar', 'wind', 'hydro', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'securityPost', 'coastGuard', 'seismicStation', 'researchAgri', 'microgrid', 'ruralHub', 'defenceBase']);
+const hasModel = (p) => HAS_MODEL.has(p.category) || (HAS_MODEL.has(p.kind) && (p.status === 'proposed' || /^airport|airfield/.test(p.kind)));
+
+// Tunnel drive-through overlay for Fly along: lit rings rushing past, with the tunnel's name.
+const tunnelFx = { el: null, raf: 0, on: false };
+function tunnelOverlay(on, text) {
+  if (!tunnelFx.el) {
+    tunnelFx.el = document.createElement('div');
+    tunnelFx.el.className = 'tunnel-fx';
+    tunnelFx.el.innerHTML = '<canvas></canvas><div class="tunnel-label"></div>';
+    document.body.appendChild(tunnelFx.el);
+  }
+  if (text) tunnelFx.el.querySelector('.tunnel-label').textContent = text;
+  if (on === tunnelFx.on) return;
+  tunnelFx.on = on;
+  tunnelFx.el.classList.toggle('on', on);
+  cancelAnimationFrame(tunnelFx.raf);
+  if (!on) return;
+  const cv = tunnelFx.el.querySelector('canvas');
+  const draw = (ts) => {
+    const w = (cv.width = innerWidth * devicePixelRatio), h = (cv.height = innerHeight * devicePixelRatio);
+    const ctx = cv.getContext('2d');
+    const cx = w / 2, cy = h * 0.46;
+    ctx.fillStyle = '#05070a';
+    ctx.fillRect(0, 0, w, h);
+    // Rings: depth z in (0,1], scaled by perspective; 14 visible, moving toward the viewer.
+    for (let i = 14; i >= 0; i--) {
+      const z = (((i - (ts / 260) % 1) / 14) + 1) % 1 || 1;
+      const sc = 0.06 / Math.max(z, 0.02);
+      const rw = Math.min(w * 1.6, w * 0.42 * sc), rh = Math.min(h * 1.6, h * 0.36 * sc);
+      ctx.globalAlpha = Math.min(1, 1.3 - z);
+      ctx.strokeStyle = '#3b4252';
+      ctx.lineWidth = Math.max(1, 10 * sc);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rw, rh, 0, Math.PI, 0);
+      ctx.lineTo(cx + rw, cy + rh * 0.55);
+      ctx.lineTo(cx - rw, cy + rh * 0.55);
+      ctx.closePath();
+      ctx.stroke();
+      // Warm lamps along the crown, and the lane line on the floor.
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(cx, cy - rh * 0.98, Math.max(1.5, 6 * sc), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#e5e7eb';
+      ctx.fillRect(cx - 2 * sc, cy + rh * 0.5, 4 * sc, 18 * sc);
+    }
+    ctx.globalAlpha = 1;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.7);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.75)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    tunnelFx.raf = requestAnimationFrame(draw);
+  };
+  tunnelFx.raf = requestAnimationFrame(draw);
 }

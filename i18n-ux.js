@@ -158,6 +158,8 @@ export const UX = {
     "method.air": "Existing airfields and runways from OpenStreetMap. Each department gets one regional airport with a 1,800 m paved runway at the airfield nearest its capital; island strips are paved for all weather; Môle-Saint-Nicolas is upgraded for its strategic bay. Capitals with no airport within 30 km get a new 2,000 m airport on the flattest land within 20 km. One national cargo and backup airport (3,200 m) is placed on flat land near the rail network, 50–150 km from Port-au-Prince. Further airports are added where over 150,000 people still live more than 45 km from a paved runway.",
     'dept.cost': "Planned routes here: about {cost} (screening estimate)",
     'panel.resize': "Drag to resize · double-click to reset",
+    'btn.view3d': "3D view",
+    'tunnel.inside': "Inside the {name} tunnel · {km}",
   },
   es: {
     'ctl.zoomIn': 'Acercar aquí',
@@ -317,6 +319,8 @@ export const UX = {
     "method.air": "Aeródromos y pistas existentes de OpenStreetMap. Cada departamento tiene un aeropuerto regional con pista pavimentada de 1.800 m en el aeródromo más cercano a su capital; las pistas de las islas se pavimentan para todo clima; Môle-Saint-Nicolas se mejora por su bahía estratégica. Las capitales sin aeropuerto a menos de 30 km reciben uno nuevo de 2.000 m en el terreno más plano a menos de 20 km. Un aeropuerto nacional de carga y respaldo (3.200 m) se ubica en terreno plano cerca del tren, a 50–150 km de Puerto Príncipe. Se añaden más aeropuertos donde más de 150.000 personas viven a más de 45 km de una pista pavimentada.",
     'dept.cost': "Rutas previstas aquí: unos {cost} (estimación preliminar)",
     'panel.resize': "Arrastre para cambiar el tamaño · doble clic para restablecer",
+    'btn.view3d': "Vista 3D",
+    'tunnel.inside': "Dentro del túnel {name} · {km}",
   },
   pt: {
     'ctl.zoomIn': 'Aproximar aqui',
@@ -476,6 +480,8 @@ export const UX = {
     "method.air": "Aeródromos e pistas existentes do OpenStreetMap. Cada departamento tem um aeroporto regional com pista pavimentada de 1.800 m no aeródromo mais próximo da capital; as pistas das ilhas são pavimentadas para qualquer tempo; Môle-Saint-Nicolas é melhorado pela sua baía estratégica. Capitais sem aeroporto a menos de 30 km recebem um novo de 2.000 m no terreno mais plano a menos de 20 km. Um aeroporto nacional de carga e reserva (3.200 m) fica em terreno plano perto da ferrovia, a 50–150 km de Porto Príncipe. Outros aeroportos são acrescentados onde mais de 150.000 pessoas vivem a mais de 45 km de uma pista pavimentada.",
     'dept.cost': "Rotas previstas aqui: cerca de {cost} (estimativa preliminar)",
     'panel.resize': "Arraste para redimensionar · clique duplo para restaurar",
+    'btn.view3d': "Vista 3D",
+    'tunnel.inside': "Dentro do túnel {name} · {km}",
   },
   fr: {
     'ctl.zoomIn': 'Zoomer ici',
@@ -635,6 +641,8 @@ export const UX = {
     "method.air": "Aérodromes et pistes existants d’OpenStreetMap. Chaque département a un aéroport régional avec une piste revêtue de 1 800 m à l’aérodrome le plus proche de son chef-lieu ; les pistes des îles sont revêtues pour tout temps ; le Môle-Saint-Nicolas est modernisé pour sa baie stratégique. Les chefs-lieux sans aéroport à moins de 30 km reçoivent un nouvel aéroport de 2 000 m sur le terrain le plus plat à moins de 20 km. Un aéroport national de fret et de secours (3 200 m) est placé sur un terrain plat près du rail, à 50–150 km de Port-au-Prince. D’autres aéroports sont ajoutés là où plus de 150 000 habitants vivent à plus de 45 km d’une piste revêtue.",
     'dept.cost': "Axes prévus ici : environ {cost} (estimation préliminaire)",
     'panel.resize': "Faites glisser pour redimensionner · double-clic pour rétablir",
+    'btn.view3d': "Vue 3D",
+    'tunnel.inside': "Dans le tunnel {name} · {km}",
   },
   ht: {
     'ctl.zoomIn': 'Rapwoche isit la',
@@ -794,5 +802,7 @@ export const UX = {
     "method.air": "Ti ayewopò ak pis ki la deja soti nan OpenStreetMap. Chak depatman jwenn yon ayewopò rejyonal ak yon pis asfalte 1 800 m nan ayewopò ki pi pre chèflye li; pis zile yo asfalte pou mache nan tout tan; Mòl Sen Nikola amelyore pou bè estratejik li. Chèflye ki pa gen ayewopò mwens pase 30 km jwenn yon nouvo ayewopò 2 000 m sou tè ki pi plat mwens pase 20 km. Yon ayewopò nasyonal pou machandiz ak sekou (3 200 m) mete sou tè plat toupre tren an, a 50–150 km de Pòtoprens. Lòt ayewopò ajoute kote plis pase 150 000 moun rete plis pase 45 km de yon pis asfalte.",
     'dept.cost': "Wout ki planifye isit la: anviwon {cost} (estimasyon apeprè)",
     'panel.resize': "Rale pou chanje gwosè · klike de fwa pou remete l",
+    'btn.view3d': "Wè an 3D",
+    'tunnel.inside': "Andedan tinèl {name} · {km}",
   },
 };
