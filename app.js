@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261114a';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261114b';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -512,11 +512,14 @@ class ButtonsControl {
     el.innerHTML = `
       <button class="ctl ${state.terrain ? 'on' : ''}" id="btn3d" aria-pressed="${state.terrain}">3D</button>
       <button class="ctl" id="btnBase">${ICONS.map}</button>
-      <button class="ctl" id="btnHome">${ICONS.home}</button>
+      <button class="ctl" id="btnZoomT"></button>
       <button class="ctl" id="btnShare">${ICONS.share}</button>`;
     el.querySelector('#btn3d').onclick = toggleTerrain;
     el.querySelector('#btnBase').onclick = toggleBase;
-    el.querySelector('#btnHome').onclick = resetView;
+    // One button for zooming: in on what you're looking at, or back out to all of Haiti (it replaces Home).
+    el.querySelector('#btnZoomT').onclick = zoomToggle;
+    map.on('zoomend', updateZoomToggle);
+    setTimeout(updateZoomToggle);
     el.querySelector('#btnShare').onclick = () => share();
     return el;
   }
@@ -551,24 +554,13 @@ class LangControl {
   onRemove() {}
 }
 map.addControl(new LangControl(), 'top-right');
-map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+// Compass only (tap to face north / flatten the tilt): pinch, the mouse wheel and the zoom button cover zooming.
+map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), 'top-right');
 map.addControl(new ButtonsControl(), 'top-right');
-// Smart zoom (in place of "my location"): zoomed out → zoom in on what you're looking at (or the selected
+// Smart zoom (the button in the main group): zoomed out → zoom in on what you're looking at (or the selected
 // item); zoomed in → back out to all of Haiti. The icon shows which way the next tap goes.
 const ZOOM_SPLIT = 9;
-class ZoomToggleControl {
-  onAdd() {
-    const el = document.createElement('div');
-    el.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-    el.innerHTML = '<button class="ctl" id="btnZoomT"></button>';
-    el.querySelector('#btnZoomT').onclick = zoomToggle;
-    map.on('zoomend', updateZoomToggle);
-    setTimeout(updateZoomToggle);
-    return el;
-  }
-  onRemove() {}
-}
-map.addControl(new ZoomToggleControl(), 'top-right');
+
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
 function toggleTerrain() {
@@ -937,7 +929,7 @@ function renderDetail(f) {
   `;
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
-  el.querySelector('#btnZoom').onclick = () => fitFeature(f, { whole: true });
+  el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, { whole: true }));
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
   el.querySelector('#btnTrip')?.addEventListener('click', () => {
@@ -1862,7 +1854,7 @@ function renderDevDetail(f) {
     <p class="source">${esc(t('dev.source', { src: p.status === 'proposed' ? t('src.rules') : t(`src.${p.src}`) }))}</p>`;
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
-  el.querySelector('#btnZoom').onclick = () => fitFeature(f, g.type === 'Point' ? { zoom: 13 } : { whole: true });
+  el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, g.type === 'Point' ? { zoom: 13 } : { whole: true }));
   el.querySelector('#btnShareF').onclick = () => share(devName(p));
   wireActs(el, f);
 }
@@ -2922,7 +2914,7 @@ function renderHazDetail(f) {
     <p class="source" style="margin-top:10px">${storm ? 'NOAA NCEI IBTrACS v04r01' : 'USGS ComCat'}</p>`;
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
-  el.querySelector('#btnZoom').onclick = () => fitFeature(f, f.geometry.type === 'Point' ? { zoom: 10 } : { whole: true });
+  el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, f.geometry.type === 'Point' ? { zoom: 10 } : { whole: true }));
 }
 
 // ---------------------------------------------------------------------------
@@ -2988,4 +2980,9 @@ function panelResize() {
   }
   grip.addEventListener('dblclick', () => setW(380, true));
   window.addEventListener('resize', () => setW($('#panel').getBoundingClientRect().width, false));
+}
+
+// Phones: before moving the camera to something, lower a high panel so the map is actually visible.
+function showMap() {
+  if (PHONE.matches && ['tall', 'full'].includes($('#panel').dataset.state)) setSheet('peek');
 }

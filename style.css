@@ -670,3 +670,13 @@ body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
 /* A wide panel keeps text at a readable width. */
 .panel.wide .panel-body > section, .panel.wide #detail, .panel.wide #page { max-width: 980px; }
 @media (max-width: 760px) { .panel-resizer { display: none; } }
+
+/* ---------- Map buttons on phones: compact, and out of the way under a tall panel ---------- */
+@media (max-width: 760px) {
+  .maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 8px 8px 0 0 !important; }
+  .maplibregl-ctrl-group button { width: 40px !important; height: 40px !important; }
+  .lang-ctl #btnLang { height: 40px !important; }
+  .maplibregl-ctrl-top-right { transition: opacity 0.2s; }
+  body:has(.panel[data-state='tall']:not(.collapsed)) .maplibregl-ctrl-top-right,
+  body:has(.panel[data-state='full']:not(.collapsed)) .maplibregl-ctrl-top-right { opacity: 0; pointer-events: none; }
+}
