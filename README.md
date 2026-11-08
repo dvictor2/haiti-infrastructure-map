@@ -59,7 +59,7 @@ Existing airfields (OpenStreetMap) and screening-level airport proposals: one re
 
 ## 3D up close
 
-From close zoom (or a card's **3D view** button, which circles the object) plan objects appear as simple 3D models generated from their real position and direction: ring stations, ferry terminals and piers, river bridges on pillars, toll plazas, airports (runway with markings, apron, terminal, tower), solar parks, wind farms, small hydro dams, water and sewage plants, logistics hubs. Trains run both ways on every rail corridor, ferries cross, planes take off at the new airports and turbine blades turn. Today's buildings (OpenFreeMap) rise in 3D at street zoom, and national routes carry gentle flow pulses. **Fly along** goes low and close; in the base-tunnel stretches found by the Engineering card it switches to a tunnel drive-through. These are illustrative massing models, not designs.
+Tilt the map (the **3D** button) to see the real terrain. A card's **3D view** button tilts over the place and slowly circles it. Today's buildings (OpenFreeMap) rise in 3D at street zoom, and national routes carry gentle flow pulses. **Fly along** goes low and close over the scenery, with a label while the route passes through a base tunnel found by the Engineering card. Hand-made block models of plan objects (stations, airports, moving trains…) were tried and removed because they looked crude; realistic models, if wanted, should come from proper 3D artwork.
 
 ## Map engine
 
