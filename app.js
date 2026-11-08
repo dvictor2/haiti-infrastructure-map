@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261109b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261110a';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -49,6 +49,7 @@ function displayName(p) {
 function displaySub(p) {
   if (p.category === 'station') return `${p.city} Périphérique · ${t('mode.station')}`;
   if (p.category === 'terminal') return `${p.serves} · ${catHint('ferry')}`;
+  if (p.subtitle === 'DR') return t('sub.dr');
   return p.subtitle;
 }
 const INFRA = ['station', 'toll', 'terminal', 'rivercross'];
@@ -152,8 +153,11 @@ const state = {
   devThemes: new Set(),
   devStatus: new Set(['proposed']), // Existing starts off: open data can mislead (e.g. water kiosks)
   pop: false,
+  page: null, // open page in the panel: 'coll:<key>', 'trip' or 'numbers'
+  trip: { from: null, to: null },
 };
 let plan, depts, byId;
+let tour = null; // guided tour state while it runs
 let dev, popData, stats, devById = new Map();
 
 // ---------------------------------------------------------------------------
@@ -368,6 +372,7 @@ map.on('load', async () => {
   map.addLayer({ id: 'sel-line', type: 'line', source: 'plan', filter: ['==', ['get', 'id'], -1], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': catColor, 'line-width': widthPlus(2) } });
   map.addLayer({ id: 'sel-dash', type: 'line', source: 'plan', filter: ['==', ['get', 'id'], -1], paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 2.5], 'line-dasharray': [0, 4, 3] } });
   map.addLayer({ id: 'sel-point', type: 'circle', source: 'plan', filter: ['==', ['get', 'id'], -1], paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+  addHighlightLayers();
 
   map.addLayer({ id: 'dept-labels', type: 'symbol', source: 'dept-labels', maxzoom: 9.2, layout: { 'text-field': ['upcase', ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-letter-spacing': 0.22, 'text-allow-overlap': false }, paint: { 'text-color': '#ffffff', 'text-opacity': 0.5, 'text-halo-color': '#05070a', 'text-halo-width': 1.2 } });
   for (const L of DATA_LAYERS) {
@@ -407,6 +412,7 @@ map.on('load', async () => {
     map.jumpTo({ center: [-72.7, 19.0], zoom: PHONE.matches ? 4.6 : 5.4 });
     map.fitBounds(HAITI_BOUNDS, { padding: PHONE.matches ? { top: 40, left: 2, right: 44, bottom: 170 } : pad(), pitch: PHONE.matches ? 0 : 38, bearing: PHONE.matches ? 0 : -4, duration: 2600, essential: true });
   }
+  if (!f) setTimeout(maybeShowHint, 3200);
 });
 
 // ---------------------------------------------------------------------------
@@ -421,6 +427,9 @@ const ICONS = {
   map: '<svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>',
   close: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg>',
+  zoomOut: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M8 11h6"/></svg>',
+  back: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>',
+  route: '<svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></svg>',
 };
 
 class ButtonsControl {
@@ -471,7 +480,22 @@ class LangControl {
 map.addControl(new LangControl(), 'top-right');
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 map.addControl(new ButtonsControl(), 'top-right');
-map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, fitBoundsOptions: { maxZoom: 13 } }), 'top-right');
+// Smart zoom (in place of "my location"): zoomed out → zoom in on what you're looking at (or the selected
+// item); zoomed in → back out to all of Haiti. The icon shows which way the next tap goes.
+const ZOOM_SPLIT = 9;
+class ZoomToggleControl {
+  onAdd() {
+    const el = document.createElement('div');
+    el.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+    el.innerHTML = '<button class="ctl" id="btnZoomT"></button>';
+    el.querySelector('#btnZoomT').onclick = zoomToggle;
+    map.on('zoomend', updateZoomToggle);
+    setTimeout(updateZoomToggle);
+    return el;
+  }
+  onRemove() {}
+}
+map.addControl(new ZoomToggleControl(), 'top-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
 function toggleTerrain() {
@@ -497,10 +521,12 @@ function resetView() {
   closeSelection.saved = null;
   clearSelection();
   setDept(null, { move: false });
-  map.fitBounds(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 38 : 0, bearing: 0, duration: 1400 });
+  fitView(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 38 : 0, bearing: 0, duration: 1400 });
 }
 
 function pad() {
+  if (tour && PHONE.matches) return { top: 230, bottom: 40, left: 24, right: 64 };
+  if (tour) return { top: 60, bottom: 220, left: state.collapsed ? 60 : $('#panel').getBoundingClientRect().right + 40, right: 80 };
   if (state.collapsed) return { top: 60, bottom: 60, left: 60, right: 70 };
   if (PHONE.matches) {
     // Use the sheet's target height (it may still be animating).
@@ -619,6 +645,7 @@ function fitFeature(f, opts = {}) {
   }
   const b = f._bbox;
   const bounds = [[b[0], b[1]], [b[2], b[3]]];
+  clearPadding();
   const cam = map.cameraForBounds(bounds, { padding: pad(), maxZoom: 13.5 });
   const cur = map.getZoom();
   if (!whole && cam && cam.zoom < cur - 1) {
@@ -627,11 +654,12 @@ function fitFeature(f, opts = {}) {
     map.easeTo({ center: nearestPointOn(coords.length > 1 ? coords : [coords[0], coords[0]], [c.lng, c.lat]), zoom: cur - 1, pitch, padding: pad(), ...MOVE, ...rest });
     return;
   }
-  map.fitBounds(bounds, { padding: pad(), maxZoom: 13.5, pitch, ...MOVE, ...rest });
+  if (cam) map.fitBounds(bounds, { padding: pad(), maxZoom: 13.5, pitch, ...MOVE, ...rest });
 }
 
 const saveView = () => ({ center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), padding: map.getPadding() });
 function select(id, { move = true } = {}) {
+  if (tour) endTour();
   if (move && state.selected == null && !closeSelection.saved) closeSelection.saved = saveView();
   if (typeof id === 'string' && devById.has(id)) return selectDev(id, { move });
   const f = byId.get(id);
@@ -640,7 +668,7 @@ function select(id, { move = true } = {}) {
   clearDevSelection();
   // A city or town picked anywhere (map, search) opens its department, so the panel always reads
   // departments → cities → details. The view to return to is the one from before this tap.
-  if (!PHONE.matches && ['city', 'town', 'station'].includes(f.properties.category) && f.properties.dept && state.dept !== f.properties.dept) {
+  if (!PHONE.matches && !state.page && ['city', 'town', 'station'].includes(f.properties.category) && f.properties.dept && state.dept !== f.properties.dept) {
     const back = closeSelection.saved ?? saveView();
     if (state.tab !== 'plan') setTab('plan');
     setDept(f.properties.dept, { move: false });
@@ -679,14 +707,25 @@ function openedPage() {
     setSheet('half');
   }
   if (!history.state?.sel) history.pushState({ ...(history.state ?? {}), sel: true }, '', location.href);
-  setFocus();
+  hideHintIfShown();
+  syncPage();
   $('#panelBody').scrollTop = 0;
 }
 function setFocus() {
-  $('#panel').classList.toggle('focus', PHONE.matches && state.selected != null && !$('#detail').hidden);
+  const page = !!state.page && !$('#page').hidden;
+  $('#panel').classList.toggle('focus', PHONE.matches && ((state.selected != null && !$('#detail').hidden) || page));
 }
+// Back steps are driven by what the new history entry says should be open.
 window.addEventListener('popstate', () => {
-  if (state.selected != null) closeSelection({ fromBack: true });
+  const hs = history.state ?? {};
+  if (!hs.sel && state.selected != null) closeSelection({ fromBack: true });
+  if ((hs.page ?? null) !== state.page) renderPage(hs.page ?? null);
+  if (leaveToHome.fn) {
+    if (hs.sel || hs.page) return history.back();
+    const fn = leaveToHome.fn;
+    leaveToHome.fn = null;
+    fn();
+  }
 });
 
 // Closing (✕, Back, Escape, tapping empty map) returns the camera to where it was before the first selection.
@@ -707,22 +746,22 @@ function clearSelection() {
   $('#detail').hidden = true;
   $('#detail').innerHTML = '';
   if (profileMarker) profileMarker.remove();
+  showSec(null);
   placeDetail();
-  setFocus();
 }
 
 // With a department open, the panel reads top to bottom: departments → its cities → details.
 // A selected place in that department shows its details in place of the department card.
 function placeDetail() {
   const det = $('#detail');
-  const inDept = !PHONE.matches && state.dept && state.tab === 'plan' && !det.hidden;
+  const inDept = !PHONE.matches && !state.page && state.dept && state.tab === 'plan' && !det.hidden;
   if (inDept && det.parentElement !== $('#deptSlot')) $('#deptSlot').appendChild(det);
   if (!inDept && det.parentElement !== $('#panelBody')) $('#panelBody').insertBefore(det, $('#home'));
   $('#deptCard').hidden = !!inDept;
   $('#stats').hidden = !!state.dept;
   document.querySelectorAll('#deptCities .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.id) === state.selected));
   if (inDept) $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
-  setFocus();
+  syncPage();
 }
 
 function connections(f) {
@@ -765,14 +804,15 @@ function renderDetail(f) {
   const g = f.geometry;
   const isLineF = g.type === 'LineString';
   const token = ++selectToken;
+  // Each fact may do something when tapped: explain itself (info), open something (nav) or copy.
   const facts = [];
-  if (g.type === 'Point') facts.push([`${g.coordinates[1].toFixed(4)}, ${g.coordinates[0].toFixed(4)}`, t('fact.latlon')]);
+  if (g.type === 'Point') facts.push([`${g.coordinates[1].toFixed(4)}, ${g.coordinates[0].toFixed(4)}`, t('fact.latlon'), 'copy']);
   if (p.km) facts.push([fmtKm(p.km), t(g.type === 'Polygon' ? 'fact.perimeter' : 'fact.length')]);
-  if (p.mode) facts.push([modeText(p), t('fact.mode')]);
-  facts.push([p.dept ?? t('fact.crossBorder'), t('fact.dept')]);
-  const badges = [`<span class="badge">${t(p.tier === 'local' ? 'badge.local' : 'badge.national')}</span>`];
-  if (p.tunnel) badges.push(`<span class="badge tunnel">${t('badge.tunnel')} · ${esc(tunnelName(p.tunnel))}</span>`);
-  if (p.mode === RAIL_MODE) badges.push(`<span class="badge rail">${t('badge.rail')}</span>`);
+  if (p.mode) facts.push([modeText(p), t('fact.mode'), engKind(p) ? 'mode' : null]);
+  facts.push([p.dept ?? t('fact.crossBorder'), t('fact.dept'), p.dept ? 'dept' : null]);
+  const badges = [`<button class="badge tap info" data-act="tier">${t(p.tier === 'local' ? 'badge.local' : 'badge.national')}</button>`];
+  if (p.tunnel) badges.push(`<button class="badge tunnel tap info" data-act="tunnel">${t('badge.tunnel')} · ${esc(tunnelName(p.tunnel))}</button>`);
+  if (p.mode === RAIL_MODE) badges.push(`<button class="badge rail tap info" data-act="rail">${t('badge.rail')}</button>`);
   const gm = g.type === 'Point'
     ? `https://www.google.com/maps/search/?api=1&query=${g.coordinates[1]},${g.coordinates[0]}`
     : isLineF
@@ -791,8 +831,9 @@ function renderDetail(f) {
     <div class="badges">${badges.join('')}</div>
     ${place ? glanceHTML(f, conns) : ''}
     ${p.derived ? `<p class="note">${t(`note.${p.category}`)}${p.serves ? `<br><b>${t('note.serves')}</b> ${esc(p.serves)}` : ''}</p>` : ''}
-    <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${k}</span></div>`).join('')}</div>
+    <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k, act]) => factHTML(v, k, act)).join('')}</div>
     <div class="actions">
+      ${['city', 'town'].includes(p.category) ? `<button class="btn primary" id="btnTrip">${ICONS.route} ${t('btn.tripFrom')}</button>` : ''}
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
@@ -807,6 +848,11 @@ function renderDetail(f) {
   el.querySelector('#btnZoom').onclick = () => fitFeature(f, { whole: true });
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
+  el.querySelector('#btnTrip')?.addEventListener('click', () => {
+    state.trip.from = canonicalPlace(p.id);
+    openPage('trip');
+  });
+  wireActs(el, f);
   el.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
   el.querySelectorAll('.planned .chip').forEach((b) => (b.onclick = () => select(b.dataset.id)));
   if (isLineF && !['border', 'ferry'].includes(p.category)) renderProfile(f, token);
@@ -1043,7 +1089,13 @@ function buildPanel() {
   input.addEventListener('focus', () => PHONE.matches && setSheet('full'));
 
   // Plan | Development tabs
-  document.querySelectorAll('.tabs [data-tab]').forEach((b) => (b.onclick = () => setTab(b.dataset.tab)));
+  document.querySelectorAll('.tabs [data-tab]').forEach((b) => (b.onclick = () => {
+    if (state.page) closePage();
+    setTab(b.dataset.tab);
+  }));
+  $('#btnTripHome').onclick = () => openPage('trip');
+  $('#btnNumbers').onclick = () => openPage('numbers');
+  $('#btnTour').onclick = startTour;
   $('#popToggle').onclick = togglePop;
   $('#popToggle').onkeydown = (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), togglePop());
   $('#popHint').textContent = t('dev.popHint', { n: fmtPeople(popData.total) });
@@ -1099,7 +1151,7 @@ function buildPanel() {
   let suppressClick = false;
   const sheet = $('#panel');
   // The item's header is a drag zone too: on phones it replaces the title box while something is open.
-  const ZONES = '.sheet-handle, .brand-row, .tabs, .detail-top, #detail > h2';
+  const ZONES = '.sheet-handle, .brand-row, .tabs, .detail-top, #detail > h2, #page > h2';
   {
     const z = sheet;
     z.addEventListener('pointerdown', (e) => {
@@ -1151,6 +1203,7 @@ function buildPanel() {
   }, true);
 
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && tour) return endTour();
     if (e.key === 'Escape' && document.activeElement === document.body) {
       stopFly();
       closeSelection();
@@ -1190,11 +1243,12 @@ function renderStats() {
     m?.forEach((x) => islands.add(x));
   }
   $('#stats').innerHTML = [
-    [Math.round(railKm).toLocaleString(locale()) + ' km', t('stat.rail')],
-    [rings, t('stat.rings', { n: micro })],
-    [tot.station.count, t('stat.stations')],
-    [islands.size, t('stat.islands')],
-  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+    [Math.round(railKm).toLocaleString(locale()) + ' km', t('stat.rail'), 'trunks'],
+    [rings, t('stat.rings', { n: micro }), 'rings'],
+    [tot.station.count, t('stat.stations'), 'stations'],
+    [islands.size, t('stat.islands'), 'islands'],
+  ].map(([b, s, k]) => `<button class="stat tap nav" data-coll="${k}"><b>${b}</b><span>${s}</span></button>`).join('');
+  $('#stats').querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
 
 }
 
@@ -1271,12 +1325,13 @@ function setDept(name, { move = true } = {}) {
     <h3>${esc(name)}</h3>
     <p>${stats?.depts[name] ? `<b>${t('dev.deptPeople', { n: fmtPeople(stats.depts[name]) })}</b> · ` : ''}${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
     <div class="bar">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color};width:${(tt[k].km / roadKm) * 100}%" title="${catLabel(k)}: ${fmtKm(tt[k].km)}"></span>`).join('')}</div>
-    <div class="legend-row">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color}"><i></i>${catLabel(k)} ${fmtKm(tt[k].km)}</span>`).join('')}</div>
+    <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}"><i></i>${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
   </div>`;
   $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
   $('#deptCities').querySelectorAll('.chip').forEach((b) => (b.onclick = () => (state.selected === Number(b.dataset.id) ? closeSelection() : select(Number(b.dataset.id)))));
   card.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
+  card.querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
   placeDetail();
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
   $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -1320,6 +1375,7 @@ function runSearch(q) {
   box.hidden = false;
   $('#home').hidden = true;
   $('#devHome').hidden = true;
+  syncPage();
   box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
 }
 
@@ -1358,6 +1414,7 @@ function applyControlText() {
   set('#btnHome', 'ctl.home');
   set('#btnShare', 'ctl.share');
   set('#btnLang', 'ctl.lang');
+  updateZoomToggle();
   if ($('#langCode')) $('#langCode').textContent = getLang().toUpperCase();
   document.querySelectorAll('#langMenu [data-lang]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.lang === getLang())));
 }
@@ -1385,6 +1442,11 @@ function changeLang(code) {
   renderDevPanel();
   if (map.getLayer('dev-labels')) map.setLayoutProperty('dev-labels', 'text-field', devLabelExpr());
   if ($('#search').value) runSearch($('#search').value);
+  if (state.page) renderPage(state.page, { move: false });
+  changeLang.busy = true;
+  if (tour) showStep(tour.i);
+  else if (!$('#tour').hidden) maybeShowHint(true);
+  changeLang.busy = false;
   if (map.getLayer('labels-infra')) map.setLayoutProperty('labels-infra', 'text-field', infraLabel());
   for (const id of ['osm-water', 'osm-towns', 'osm-islands', 'osm-villages', 'osm-suburbs']) map.getLayer(id) && map.setLayoutProperty(id, 'text-field', osmName());
   map.getLayer('osm-airports') && map.setLayoutProperty('osm-airports', 'text-field', ['concat', '✈ ', osmName()]);
@@ -1483,8 +1545,9 @@ function togglePop() {
 function setTab(tab) {
   state.tab = tab;
   document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  $('#home').hidden = tab !== 'plan' || !$('#results').hidden;
-  $('#devHome').hidden = tab !== 'dev' || !$('#results').hidden;
+  $('#home').hidden = tab !== 'plan' || !$('#results').hidden || !!state.page;
+  $('#devHome').hidden = tab !== 'dev' || !$('#results').hidden || !!state.page;
+  syncPage();
   if (tab === 'dev' && !setTab.opened) {
     setTab.opened = true;
     if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing'].forEach((k) => state.devThemes.add(k));
@@ -1506,6 +1569,7 @@ function renderDevPanel() {
   counts.energy.proposed += 1; // the power backbone
   counts.connectivity.proposed += 1; // the fibre backbone
   $('#allThemes').textContent = t(state.devThemes.size ? 'layers.allOff' : 'layers.allOn');
+  $('#devCountKey').innerHTML = t('dev.countKey');
   $('#popToggle').classList.toggle('off', !state.pop);
   $('#popToggle').setAttribute('aria-checked', String(state.pop));
   document.querySelectorAll('.status-chips .chip').forEach((c) => c.classList.toggle('on', state.devStatus.has(c.dataset.status)));
@@ -1606,6 +1670,7 @@ function clearDevSelection() {
 }
 
 function selectDev(id, { move = true } = {}) {
+  if (tour) endTour();
   const f = devById.get(id);
   stopFly();
   clearSelection();
@@ -1651,7 +1716,7 @@ function renderDevDetail(f) {
       <span class="badge">${esc(t(`theme.${p.theme}`)[0])}</span>
     </div>
     <p class="note">${esc(devWhy(p))}</p>
-    ${facts.length ? `<div class="facts">${facts.map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${esc(k)}</span></div>`).join('')}</div>` : '<div style="height:12px"></div>'}
+    ${facts.length ? `<div class="facts">${facts.map(([v, k]) => factHTML(v, esc(k), k === t('fact.dept') && v === p.dept ? 'dept' : null)).join('')}</div>` : '<div style="height:12px"></div>'}
     <div class="actions">
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t('btn.gmaps')}</a>
@@ -1663,6 +1728,7 @@ function renderDevDetail(f) {
   el.querySelector('#detailClose').onclick = closeSelection;
   el.querySelector('#btnZoom').onclick = () => fitFeature(f, g.type === 'Point' ? { zoom: 13 } : { whole: true });
   el.querySelector('#btnShareF').onclick = () => share(devName(p));
+  wireActs(el, f);
 }
 
 // ---------------------------------------------------------------------------
@@ -1702,12 +1768,13 @@ function engineeringHTML(f, s, sm) {
     return `<div class="eng">
       <div class="profile-head"><h3>${t('eng.title')}</h3></div>
       <p class="eng-spec">${esc(t(e.spec))}</p>
-      <div class="eng-tiles"><div class="cost"><b>${fmtRange(25, 45)}</b><span>${t('eng.cost')}</span></div><div><b>${fmtMin(km / 30 + 0.5)}</b><span>${t('eng.crossing')}</span></div></div>
+      <div class="eng-tiles"><div class="cost tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtRange(25, 45)}</b><span>${t('eng.cost')}</span></div><div class="tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtMin(km / 30 + 0.5)}</b><span>${t('eng.crossing')}</span></div></div>
       <p class="source">${t('eng.costNote')}</p></div>`;
   }
   // A grade-limited track line through the terrain: where the ground is far above it → tunnel (or a
   // mountain section for ordinary roads); far below it or under water → viaduct / bridge; else at grade.
   const n = sm.length;
+  const types = [];
   const dx = n > 1 ? (s[1].d - s[0].d) * 1000 : 1000;
   const g = e.grade * dx;
   // Start from the terrain averaged over a few km (a line follows the land's broad shape), then
@@ -1726,20 +1793,32 @@ function engineeringHTML(f, s, sm) {
     // Embankments up to 25 m and cuttings up to 40 m count as at-grade construction.
     const type = s[i].e <= 0 || diff < -25 ? 'viaduct' : diff > 40 ? (e.tunnels ? 'tunnel' : 'mountain') : 'surface';
     parts[type] = (parts[type] ?? 0) + 1;
+    types.push(type);
   }
+  // Where each kind of section lies, as map lines (tap a legend entry to see them).
+  const runs = {};
+  for (let i = 0; i < n;) {
+    let j = i;
+    while (j + 1 < n && types[j + 1] === types[i]) j++;
+    (runs[types[i]] ??= []).push(s.slice(Math.max(0, i - 1), Math.min(n, j + 2)).map((v) => v.p));
+    i = j + 1;
+  }
+  f._secs = runs;
   // Shares of the sampled points, applied to the route's measured length.
   for (const key of Object.keys(parts)) parts[key] = (parts[key] / n) * km;
   const mid = Object.entries(parts).reduce((sum, [key, len]) => sum + len * (e.cost[key] ?? e.cost.surface), 0);
   const order = ['surface', 'mountain', 'viaduct', 'tunnel'].filter((key) => parts[key] > 0.05);
-  const times = [`<div><b>${fmtMin(km / e.car)}</b><span>${t('eng.car')}</span></div>`];
-  if (e.train) times.push(`<div><b>${fmtMin(km / e.train)}</b><span>${t('eng.train')}</span></div>`);
+  f._eng = { kind: k, parts, mid, order };
+  const tile = (b, label) => `<div class="tap info" data-act="speed" role="button" tabindex="0"><b>${b}</b><span>${label}</span></div>`;
+  const times = [tile(fmtMin(km / e.car), t('eng.car'))];
+  if (e.train) times.push(tile(fmtMin(km / e.train), t('eng.train')));
   return `<div class="eng">
     <div class="profile-head"><h3>${t('eng.title')}</h3></div>
     <p class="eng-spec">${esc(t(e.spec))}</p>
     <div class="bar">${order.map((key) => `<span style="--c:${ENG_COLORS[key]};width:${(parts[key] / km) * 100}%" title="${t(`eng.${key}`)}"></span>`).join('')}</div>
-    <div class="legend-row">${order.map((key) => `<span style="--c:${ENG_COLORS[key]}"><i></i>${t(`eng.${key}`)} ${fmtKm(parts[key])}</span>`).join('')}</div>
+    <div class="legend-row legs" title="${esc(t('ex.sec'))}">${order.map((key) => `<button class="leg" data-act="sec" data-k="${key}" style="--c:${ENG_COLORS[key]}"><i></i>${t(`eng.${key}`)} ${fmtKm(parts[key])}</button>`).join('')}</div>
     <div class="eng-tiles">
-      <div class="cost"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('eng.cost')}</span></div>
+      <div class="cost tap info" data-act="cost" role="button" tabindex="0"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('eng.cost')}</span></div>
       ${times.join('')}
     </div>
     <p class="source">${t('eng.costNote')}</p>
@@ -1750,25 +1829,699 @@ function glanceHTML(f, conns) {
   const p = f.properties;
   const st = stats.places[p.id];
   const here = f.geometry.coordinates;
-  let hosp = null;
+  let hosp = null, hospId = null;
   for (const h of dev?.features ?? []) {
     if (h.properties.kind !== 'hospital') continue;
     const d = haversine(here, h.geometry.coordinates);
-    if (hosp == null || d < hosp) hosp = d;
+    if (hosp == null || d < hosp) [hosp, hospId] = [d, h.properties.id];
   }
   const key = norm(p.name.replace(/\s*\(.*\)$/, '').split(/\s*[—\/·]\s*/)[0]);
   const planned = (dev?.features ?? []).filter((d) => d.properties.status === 'proposed' && d.geometry.type === 'Point' && d.properties.place && norm(d.properties.place).startsWith(key) && haversine(here, d.geometry.coordinates) < 20).slice(0, 8);
   return `<div class="glance">
     <div class="eng-tiles three">
-      <div><b>${fmtPeople(st.p5)}</b><span>${t('city.p5')}</span></div>
-      <div><b>${fmtPeople(st.p10)}</b><span>${t('city.p10')}</span></div>
-      <div><b>${fmtPeople(st.p25)}</b><span>${t('city.p25')}</span></div>
+      ${[['p5', 'city.p5'], ['p10', 'city.p10'], ['p25', 'city.p25']].map(([k, l]) => `<div class="tap info" data-act="people" role="button" tabindex="0"><b>${fmtPeople(st[k])}</b><span>${t(l)}</span></div>`).join('')}
     </div>
     <div class="facts">
-      <div class="fact"><b>${esc(p.dept ?? '—')}</b><span>${t('fact.dept')}</span></div>
-      <div class="fact"><b>${conns.length}</b><span>${t('city.routes')}</span></div>
-      <div class="fact"><b>${hosp == null ? '—' : fmtKm(hosp)}</b><span>${t('city.hospital')}</span></div>
+      ${factHTML(p.dept ?? '—', t('fact.dept'), p.dept ? 'dept' : null)}
+      ${factHTML(conns.length, t('city.routes'), conns.length ? 'routes' : null)}
+      ${factHTML(hosp == null ? '—' : fmtKm(hosp), t('city.hospital'), hospId ? 'hospital' : null, hospId ? `data-id="${hospId}"` : '')}
     </div>
     ${planned.length ? `<p class="sub-head">${t('city.planned')}</p><div class="depts compact planned">${planned.map((d) => `<button class="chip" data-id="${d.properties.id}" style="border-color:${DEV_THEMES[d.properties.theme]}">${esc(t(`kind.${d.properties.kind}`))}</button>`).join('')}</div>` : ''}
   </div>`;
+}
+
+// ===========================================================================
+// Tappable details: explanations, highlights, shortcuts
+// ===========================================================================
+const EMPTY = { type: 'FeatureCollection', features: [] };
+
+// A fact tile. act: what a tap does (info = explain, nav = open something, copy = copy the value).
+function factHTML(v, label, act, extra = '') {
+  const kind = { dept: 'nav', routes: 'nav', hospital: 'nav', copy: 'copy' }[act] ?? 'info';
+  const attrs = act ? ` class="fact tap ${kind}" data-act="${act}" role="button" tabindex="0" ${extra}` : ' class="fact"';
+  return `<div${attrs}><b title="${esc(v)}">${esc(v)}</b><span>${label}</span></div>`;
+}
+
+// Opens a short explanation right under the row of tiles or tags that was tapped; tapping again closes it.
+function explainAt(x, key, html) {
+  const host = x.closest('.facts, .badges, .eng-tiles, .legend-row') ?? x.parentElement;
+  const next = host.nextElementSibling;
+  host.querySelectorAll('.on').forEach((n) => n.classList.remove('on'));
+  if (next?.classList.contains('explain')) {
+    const same = next.dataset.k === key;
+    next.remove();
+    if (same) return;
+  }
+  host.insertAdjacentHTML('afterend', `<div class="explain" data-k="${key}">${html}</div>`);
+  x.classList.add('on');
+}
+
+// The details card is re-filled for every item, so its listeners are attached once and read the current item.
+function wireActs(el, f) {
+  el._actItem = f;
+  if (el._actWired) return;
+  el._actWired = true;
+  const run = (x) => onAct(x, el._actItem, el);
+  el.addEventListener('click', (e) => {
+    const x = e.target.closest('[data-act]');
+    if (x && el.contains(x)) run(x);
+  });
+  el.addEventListener('keydown', (e) => {
+    const x = e.target.closest?.('[data-act][role="button"]');
+    if (x && (e.key === 'Enter' || e.key === ' ')) (e.preventDefault(), run(x));
+  });
+}
+
+function onAct(x, f, el) {
+  const p = f.properties;
+  const act = x.dataset.act;
+  const k = engKind(p);
+  if (act === 'copy') {
+    const v = x.querySelector('b').textContent;
+    navigator.clipboard?.writeText(v).then(() => toast(t('toast.coords')), () => toast(v));
+  } else if (act === 'dept') goDept(p.dept);
+  else if (act === 'mode') explainAt(x, act, esc(t(ENG[k].spec)));
+  else if (act === 'tier') explainAt(x, act, t(p.tier === 'local' ? 'ex.local' : 'ex.national'));
+  else if (act === 'rail') explainAt(x, act, t('ex.rail'));
+  else if (act === 'tunnel') {
+    const has = !!f._secs?.tunnel;
+    explainAt(x, act, `${t('ex.tunnel', { name: esc(tunnelName(p.tunnel)) })}${has ? ` ${t('ex.tunnelMap')}` : ''}`);
+    if (has) showSec(x.classList.contains('on') ? 'tunnel' : null);
+  } else if (act === 'sec') showSec(secShown === x.dataset.k ? null : x.dataset.k, true);
+  else if (act === 'cost') explainAt(x, act, costHTML(f));
+  else if (act === 'speed') explainAt(x, act, `${t('ex.speed', { car: ENG[k].car })}${ENG[k].train ? ` ${t('ex.speedTrain', { train: ENG[k].train })}` : ''}`);
+  else if (act === 'ferry') explainAt(x, act, t('ex.ferry'));
+  else if (act === 'people') explainAt(x, act, t('ex.people'));
+  else if (act === 'routes') el.querySelector('.list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  else if (act === 'hospital') select(x.dataset.id);
+}
+
+function costHTML(f) {
+  const { kind, parts, mid, order } = f._eng;
+  const c = ENG[kind].cost;
+  const rows = order.map((key) => {
+    const per = c[key] ?? c.surface;
+    return `<tr><td><i style="--c:${ENG_COLORS[key]}"></i>${t(`eng.${key}`)}</td><td>${fmtKm(parts[key])}</td><td>× $${per} M/km</td><td>${fmtMoney(parts[key] * per)}</td></tr>`;
+  }).join('');
+  return `<table class="calc">${rows}<tr class="total"><td colspan="3">${t('ex.costTotal')}</td><td>${fmtMoney(mid)}</td></tr></table><p>${t('ex.costRange')}</p>`;
+}
+
+// Highlight layers: 'hl' for pages (lists, trips, the tour), 'sec' for one kind of construction on a route.
+function addHighlightLayers() {
+  map.addSource('hl', { type: 'geojson', data: EMPTY });
+  map.addSource('sec', { type: 'geojson', data: EMPTY });
+  const lineL = { type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' } };
+  map.addLayer({ ...lineL, id: 'hl-glow', source: 'hl', filter: isLine, paint: { 'line-color': ['get', 'c'], 'line-width': widthPlus(12), 'line-blur': 7, 'line-opacity': 0.55 } }, 'sel-glow');
+  map.addLayer({ ...lineL, id: 'hl-line', source: 'hl', filter: isLine, paint: { 'line-color': ['get', 'c'], 'line-width': widthPlus(2.5) } }, 'sel-glow');
+  map.addLayer({ id: 'hl-point', type: 'circle', source: 'hl', filter: isPoint, paint: { 'circle-radius': 10, 'circle-color': ['get', 'c'], 'circle-opacity': 0.3, 'circle-stroke-color': ['get', 'c'], 'circle-stroke-width': 2.5 } });
+  map.addLayer({ ...lineL, id: 'sec-glow', source: 'sec', paint: { 'line-color': ['get', 'c'], 'line-width': 18, 'line-blur': 9, 'line-opacity': 0.7 } });
+  map.addLayer({ ...lineL, id: 'sec-line', source: 'sec', paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
+}
+function setHL(feats = [], color) {
+  map.getSource('hl')?.setData({ type: 'FeatureCollection', features: feats.map((f) => ({ type: 'Feature', geometry: f.geometry, properties: { category: f.properties.category, c: color ?? f.properties.c ?? CATS[f.properties.category]?.color ?? '#ffffff' } })) });
+}
+function fitFeats(feats, opts = {}) {
+  const b = bboxOf(feats.flatMap((f) => flatCoords(f.geometry)));
+  if (!Number.isFinite(b[0])) return;
+  fitView([[b[0], b[1]], [b[2], b[3]]], { padding: pad(), maxZoom: 12, pitch: state.terrain ? 30 : 0, bearing: 0, ...MOVE, ...opts });
+}
+
+let secShown = null;
+function showSec(k, move = false) {
+  secShown = k;
+  const f = state.selected != null && byId?.get(state.selected);
+  const runs = k && f?._secs?.[k];
+  map.getSource('sec')?.setData(runs ? { type: 'FeatureCollection', features: runs.map((c) => ({ type: 'Feature', properties: { c: ENG_COLORS[k] }, geometry: { type: 'LineString', coordinates: c } })) } : EMPTY);
+  document.querySelectorAll('#detail .leg').forEach((b) => b.classList.toggle('on', b.dataset.k === k));
+  if (runs && move) fitFeats(runs.map((c) => ({ geometry: { type: 'LineString', coordinates: c } })), { maxZoom: 13 });
+}
+
+// ===========================================================================
+// Smart zoom button
+// ===========================================================================
+function updateZoomToggle() {
+  const b = $('#btnZoomT');
+  if (!b) return;
+  const zoomIn = map.getZoom() < ZOOM_SPLIT;
+  b.innerHTML = zoomIn ? ICONS.zoom : ICONS.zoomOut;
+  b.title = t(zoomIn ? 'ctl.zoomIn' : 'ctl.zoomOut');
+  b.setAttribute('aria-label', b.title);
+}
+function zoomToggle() {
+  stopFly();
+  if (map.getZoom() < ZOOM_SPLIT) {
+    const f = state.selected != null && (byId?.get(state.selected) ?? devById.get(state.selected));
+    const center = f ? (f.geometry.type === 'Point' ? f.geometry.coordinates : nearestPointOn(flatCoords(f.geometry), [map.getCenter().lng, map.getCenter().lat])) : map.getCenter();
+    map.flyTo({ center, zoom: clamp(map.getZoom() + 2.5, 9.5, 12), pitch: state.terrain ? 45 : 0, padding: pad(), ...MOVE });
+  } else {
+    fitView(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 38 : 0, bearing: 0, ...MOVE });
+  }
+}
+
+// ===========================================================================
+// Pages in the panel: lists, trip planner, plan in numbers. Each has its own Back step.
+// ===========================================================================
+let numbers = null;
+getJSON('data/numbers.json').then((d) => {
+  numbers = d;
+  if (state.page === 'numbers') renderPage('numbers', { move: false });
+}).catch(() => {});
+
+function openPage(name) {
+  stopFly();
+  if (tour) endTour();
+  hideHintIfShown();
+  if (state.selected != null) {
+    closeSelection.saved = null;
+    clearSelection();
+  }
+  const hs = history.state ?? {};
+  if (hs.page === name && !hs.sel) return renderPage(name);
+  // A page opened from an item replaces it in the history; otherwise it is a new step.
+  if (hs.sel) history.replaceState({ page: name }, '', location.href);
+  else history.pushState({ page: name }, '', location.href);
+  renderPage(name);
+}
+function closePage() {
+  if (history.state?.page) history.back();
+  else renderPage(null);
+}
+// Close whatever is open (item and/or page) and then run fn on the home view.
+function leaveToHome(fn) {
+  closeSelection.saved = null;
+  renderPage.saved = null;
+  const hs = history.state ?? {};
+  if (hs.sel || hs.page) {
+    leaveToHome.fn = fn;
+    history.back();
+  } else {
+    clearSelection();
+    renderPage(null);
+    fn();
+  }
+}
+function goDept(name) {
+  leaveToHome(() => {
+    if (state.tab !== 'plan') setTab('plan');
+    setDept(name);
+  });
+}
+
+function syncPage() {
+  const box = $('#page');
+  if (!box) return;
+  box.hidden = !state.page || state.selected != null || !$('#results').hidden;
+  setFocus();
+}
+
+function renderPage(name, { move = true } = {}) {
+  const box = $('#page');
+  if (!state.page && name) renderPage.saved = saveView();
+  state.page = name;
+  setHL([]);
+  if (!name) {
+    box.innerHTML = '';
+    if (renderPage.saved) map.flyTo({ ...MOVE, ...renderPage.saved });
+    renderPage.saved = null;
+    setTab(state.tab);
+    return;
+  }
+  const i = name.indexOf(':');
+  const type = i < 0 ? name : name.slice(0, i);
+  const key = i < 0 ? '' : name.slice(i + 1);
+  const page = PAGES[type];
+  box.innerHTML = `<div class="detail-top page-top"><button class="back-btn" id="pageBack">${ICONS.back}<span>${t('btn.back')}</span></button></div>${page.html(key)}`;
+  box.querySelector('#pageBack').onclick = closePage;
+  if (state.collapsed) setCollapsed(false);
+  setTab(state.tab);
+  page.wire?.(box, key, move);
+  if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
+  $('#panelBody').scrollTop = 0;
+}
+
+// ---------- Lists ----------
+const ISLAND_RX = /vache|cayemite|tortue|gonave/;
+function collSet(key) {
+  const [k, dept] = key.split('@');
+  const cat = (f) => f.properties.category;
+  let feats;
+  if (k === 'trunks') feats = plan.features.filter((f) => ['corridor', 'trunk'].includes(cat(f)));
+  else if (k === 'rings') feats = plan.features.filter((f) => cat(f) === 'ring');
+  else if (k === 'stations') feats = plan.features.filter((f) => cat(f) === 'station');
+  else if (k === 'islands') feats = plan.features.filter((f) => ['bridge', 'ferry', 'terminal'].includes(cat(f)) || (cat(f) === 'corridor' && ISLAND_RX.test(norm(`${f.properties.name} ${f.properties.original}`))));
+  else feats = plan.features.filter((f) => cat(f) === k.replace(/^cat-/, ''));
+  if (dept) feats = feats.filter((f) => f.properties.dept === dept);
+  return feats.sort((a, b) => (a.properties.tier === 'local') - (b.properties.tier === 'local') || a.properties.sort - b.properties.sort || (b.properties.km ?? 0) - (a.properties.km ?? 0));
+}
+function collText(key) {
+  const [k, dept] = key.split('@');
+  const named = ['trunks', 'rings', 'stations', 'islands'].includes(k);
+  const c = k.replace(/^cat-/, '');
+  const title = named ? t(`coll.${k}`) : catLabel(c);
+  return { title: dept ? `${title} · ${dept}` : title, note: named ? t(`coll.${k}.note`) : catHint(c) };
+}
+const PAGES = {
+  coll: {
+    html(key) {
+      const feats = collSet(key);
+      const { title, note } = collText(key);
+      const km = feats.reduce((s, f) => s + (f.geometry.type === 'LineString' ? f.properties.km ?? 0 : 0), 0);
+      return `<h2>${esc(title)}</h2>
+        <p class="sub">${t('coll.count', { n: feats.length })}${km ? ` · ${fmtKm(km)}` : ''}</p>
+        ${note ? `<p class="note">${esc(note)}</p>` : ''}
+        <ul class="list" style="margin-top:14px">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
+    },
+    wire(box, key, move) {
+      const feats = collSet(key);
+      setHL(feats);
+      if (move) fitFeats(feats);
+      box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
+    },
+  },
+  numbers: { html: numbersHTML, wire: wireNumbers },
+  trip: { html: tripHTML, wire: wireTrip },
+};
+
+// ---------- Plan in numbers ----------
+function routeMid(f) {
+  const p = f.properties;
+  const k = engKind(p);
+  if (!k) return 0;
+  if (k === 'ferry') return 35;
+  const c = ENG[k].cost;
+  const parts = numbers?.routes[p.id] ?? { surface: p.km ?? 0 };
+  return Object.entries(parts).reduce((s, [key, len]) => s + len * (c[key] ?? c.surface), 0);
+}
+const numSort = { key: 'people', dir: -1 };
+function numbersHTML() {
+  if (!numbers) return `<h2>${t('num.title')}</h2><p class="note">${t('num.loading')}</p>`;
+  const lines = plan.features.filter((f) => f.geometry.type === 'LineString' && ROAD_CATS.includes(f.properties.category));
+  let mid = 0;
+  const sec = { surface: 0, mountain: 0, viaduct: 0, tunnel: 0 };
+  for (const f of lines) {
+    mid += routeMid(f);
+    for (const [k, v] of Object.entries(numbers.routes[f.properties.id] ?? {})) sec[k] += v;
+  }
+  const natKm = lines.filter((f) => f.properties.tier === 'national').reduce((s, f) => s + f.properties.km, 0);
+  const localKm = lines.filter((f) => f.properties.tier === 'local').reduce((s, f) => s + f.properties.km, 0);
+  const secTot = Object.values(sec).reduce((a, b) => a + b, 0) || 1;
+  const order = ['surface', 'mountain', 'viaduct', 'tunnel'].filter((k) => sec[k] > 0.5);
+  const tot = catTotals(plan.features);
+  const cv = numbers.cover.total;
+  const pct = (a, b) => `${Math.round((100 * a) / (b || 1))}%`;
+  // Department table
+  const names = depts.features.map((f) => f.properties.name);
+  const rows = names.map((name) => {
+    const feats = lines.filter((f) => f.properties.dept === name);
+    const c = numbers.cover[name] ?? {};
+    return { name, people: stats.depts[name] ?? c.people ?? 0, km: feats.reduce((s, f) => s + f.properties.km, 0), cost: feats.reduce((s, f) => s + routeMid(f), 0), st: c.people ? c.st5 / c.people : 0 };
+  });
+  rows.sort((a, b) => (numSort.key === 'name' ? a.name.localeCompare(b.name) * -numSort.dir : (a[numSort.key] - b[numSort.key]) * numSort.dir));
+  const between = lines.filter((f) => !f.properties.dept).reduce((s, f) => s + routeMid(f), 0);
+  const col = (key, label) => `<th><button data-sort="${key}" class="${numSort.key === key ? 'on' : ''}">${label}${numSort.key === key ? (numSort.dir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`;
+  return `<h2>${t('num.title')}</h2>
+    <p class="sub">${t('num.sub')}</p>
+    <div class="eng" style="margin-top:14px">
+      <div class="eng-tiles">
+        <div class="cost"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('num.cost')}</span></div>
+        <div><b>${fmtKm(natKm)}</b><span>${t('num.nat')}</span></div>
+        <div><b>${fmtKm(localKm)}</b><span>${t('num.local')}</span></div>
+      </div>
+      <p class="sub-head" style="margin-top:12px">${t('num.build')}</p>
+      <div class="bar">${order.map((k) => `<span style="--c:${ENG_COLORS[k]};width:${(sec[k] / secTot) * 100}%"></span>`).join('')}</div>
+      <div class="legend-row">${order.map((k) => `<span style="--c:${ENG_COLORS[k]}"><i></i>${t(`eng.${k}`)} ${fmtKm(sec[k])}</span>`).join('')}</div>
+      <p class="source" style="margin:0">${t('eng.costNote')}</p>
+    </div>
+    <p class="sub-head">${t('num.people')}</p>
+    <div class="eng-tiles two">
+      <div><b>${pct(cv.road10, cv.people)}</b><span>${t('num.road10')}</span></div>
+      <div><b>${pct(cv.st5, cv.people)}</b><span>${t('num.st5')}</span></div>
+    </div>
+    <p class="sub-head" style="margin-top:16px">${t('num.byType')}</p>
+    <ul class="list">${ROAD_CATS.map((k) => `<li><button class="item" data-coll="cat-${k}" style="--c:${CATS[k].color}"><span class="dotc"></span><span class="t"><b>${catLabel(k)}</b><small>${esc(catHint(k))}</small></span><span class="k">${tot[k].count} · ${fmtKm(tot[k].km)}</span></button></li>`).join('')}</ul>
+    <p class="sub-head" style="margin-top:16px">${t('num.depts')}</p>
+    <p class="source" style="margin:0 0 6px">${t('num.deptHint')}</p>
+    <div class="table-wrap"><table class="dept-table">
+      <thead><tr>${col('name', t('num.col.dept'))}${col('people', t('num.col.people'))}${col('km', t('num.col.km'))}${col('cost', t('num.col.cost'))}${col('st', t('num.col.st'))}</tr></thead>
+      <tbody>${rows.map((r) => `<tr data-dept="${esc(r.name)}" tabindex="0"><td>${esc(r.name)}</td><td>${fmtPeople(r.people)}</td><td>${fmtKm(r.km)}</td><td>${fmtMoney(r.cost)}</td><td>${Math.round(r.st * 100)}%</td></tr>`).join('')}
+      <tr class="muted"><td>${t('num.between')}</td><td></td><td></td><td>${fmtMoney(between)}</td><td></td></tr></tbody>
+    </table></div>`;
+}
+function wireNumbers(box, key, move) {
+  if (move) fitView(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 30 : 0, bearing: 0, ...MOVE });
+  box.querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
+  box.querySelectorAll('[data-sort]').forEach((b) => (b.onclick = () => {
+    const k = b.dataset.sort;
+    numSort.dir = numSort.key === k ? -numSort.dir : k === 'name' ? 1 : -1;
+    numSort.key = k;
+    renderPage('numbers', { move: false });
+  }));
+  box.querySelectorAll('tr[data-dept]').forEach((r) => {
+    r.onclick = () => goDept(r.dataset.dept);
+    r.onkeydown = (e) => e.key === 'Enter' && goDept(r.dataset.dept);
+  });
+}
+
+// ---------- Trip planner ----------
+const TRIP_ROADS = ['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'urban', 'feeder'];
+const placeKey = (name) => norm(name.replace(/\s*\(.*\)$/, ''));
+let placesCache = null;
+function tripPlaces() {
+  if (placesCache) return placesCache;
+  const seen = new Map();
+  for (const f of plan.features) {
+    if (!['city', 'town'].includes(f.properties.category)) continue;
+    const k = placeKey(f.properties.name);
+    if (!seen.has(k) || f.properties.category === 'city') seen.set(k, f);
+  }
+  placesCache = [...seen.values()].sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+  return placesCache;
+}
+function canonicalPlace(id) {
+  const f = byId.get(id);
+  return tripPlaces().find((g) => placeKey(g.properties.name) === placeKey(f.properties.name))?.properties.id ?? id;
+}
+// Nearest point on a line, with its distance along the line (km).
+function projectOn(f, p) {
+  const c = f.geometry.coordinates, cum = f._cum;
+  const sx = 111.32 * Math.cos(rad(p[1])), sy = 110.57;
+  let best = { dist: Infinity };
+  for (let i = 1; i < c.length; i++) {
+    const ax = (c[i - 1][0] - p[0]) * sx, ay = (c[i - 1][1] - p[1]) * sy;
+    const bx = (c[i][0] - p[0]) * sx, by = (c[i][1] - p[1]) * sy;
+    const dx = bx - ax, dy = by - ay;
+    const u = clamp(-(ax * dx + ay * dy) / (dx * dx + dy * dy || 1e-12), 0, 1);
+    const dist = Math.hypot(ax + u * dx, ay + u * dy);
+    if (dist < best.dist) best = { dist, d: cum[i - 1] + u * (cum[i] - cum[i - 1]), pt: [c[i - 1][0] + u * (c[i][0] - c[i - 1][0]), c[i - 1][1] + u * (c[i][1] - c[i - 1][1])] };
+  }
+  return best;
+}
+const tripSpeed = (p) => (p.category === 'ferry' ? 30 : ENG[engKind(p)]?.car ?? 50);
+
+// Road graph of the planned network. Lines are cut wherever another line ends on them and where a town
+// sits next to them; nodes closer than ~1 km merge.
+let graph = null;
+function buildGraph() {
+  const lines = plan.features.filter((f) => f.geometry.type === 'LineString' && TRIP_ROADS.includes(f.properties.category));
+  const nodes = [];
+  const cells = new Map();
+  const TOL = 0.9;
+  const nodeAt = (pt) => {
+    const cx = Math.floor(pt[0] / 0.01), cy = Math.floor(pt[1] / 0.01);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const n of cells.get(`${cx + i},${cy + j}`) ?? []) if (haversine(nodes[n].pt, pt) < TOL) return n;
+    nodes.push({ pt, edges: [] });
+    const key = `${cx},${cy}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(nodes.length - 1);
+    return nodes.length - 1;
+  };
+  const near = (f, p, padDeg) => p[0] > f._bbox[0] - padDeg && p[0] < f._bbox[2] + padDeg && p[1] > f._bbox[1] - padDeg && p[1] < f._bbox[3] + padDeg;
+  const cuts = new Map(lines.map((f) => [f, [{ d: 0, pt: f.geometry.coordinates[0] }, { d: f._cum.at(-1), pt: f.geometry.coordinates.at(-1) }]]));
+  const ends = lines.flatMap((f) => [f.geometry.coordinates[0], f.geometry.coordinates.at(-1)]);
+  for (const f of lines) {
+    const total = f._cum.at(-1);
+    for (const e of ends) {
+      if (!near(f, e, 0.02)) continue;
+      const r = projectOn(f, e);
+      if (r.dist < TOL && r.d > 0.3 && r.d < total - 0.3) cuts.get(f).push({ d: r.d, pt: e });
+    }
+  }
+  const placeAt = new Map();
+  for (const pl of tripPlaces()) {
+    const pt = pl.geometry.coordinates;
+    let best = null;
+    for (const f of lines) {
+      if (!near(f, pt, 0.06)) continue;
+      const r = projectOn(f, pt);
+      // Prefer a national route when one passes close by, so trips start on the main network.
+      r.score = r.dist + (f.properties.tier === 'local' ? 1.5 : 0);
+      if (!best || r.score < best.r.score) best = { f, r };
+    }
+    if (best && best.r.dist < 5) cuts.get(best.f).push({ d: best.r.d, pt: best.r.pt, place: pl.properties.id, access: best.r.dist });
+  }
+  for (const f of lines) {
+    const list = cuts.get(f).sort((a, b) => a.d - b.d);
+    const ids = list.map((c) => nodeAt(c.pt));
+    list.forEach((c, i) => c.place != null && placeAt.set(c.place, { node: ids[i], access: c.access }));
+    for (let i = 1; i < list.length; i++) {
+      if (ids[i] === ids[i - 1]) continue;
+      const km = list[i].d - list[i - 1].d;
+      const e = { a: ids[i - 1], b: ids[i], f, d0: list[i - 1].d, d1: list[i].d, km, hrs: km / tripSpeed(f.properties) + (f.properties.category === 'ferry' ? 0.5 : 0) };
+      nodes[e.a].edges.push(e);
+      nodes[e.b].edges.push(e);
+    }
+  }
+  return { nodes, placeAt };
+}
+function findTrip(fromId, toId) {
+  graph ??= buildGraph();
+  const A = graph.placeAt.get(fromId), B = graph.placeAt.get(toId);
+  if (!A || !B) return null;
+  const n = graph.nodes.length;
+  const dist = new Float64Array(n).fill(Infinity);
+  const prev = new Array(n).fill(null);
+  const done = new Uint8Array(n);
+  dist[A.node] = 0;
+  for (;;) {
+    let u = -1;
+    for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0 || u === B.node) break;
+    done[u] = 1;
+    for (const e of graph.nodes[u].edges) {
+      const v = e.a === u ? e.b : e.a;
+      if (dist[u] + e.hrs < dist[v]) [dist[v], prev[v]] = [dist[u] + e.hrs, { e, from: u }];
+    }
+  }
+  if (A.node !== B.node && !prev[B.node]) return null;
+  const steps = [];
+  for (let v = B.node; v !== A.node; v = prev[v].from) steps.unshift({ ...prev[v].e, fwd: prev[v].e.b === v });
+  return { steps, access: (A.access ?? 0) + (B.access ?? 0) };
+}
+function sliceLine(f, a, b) {
+  const c = f.geometry.coordinates, cum = f._cum;
+  const lo = Math.min(a, b), hi = Math.max(a, b);
+  const out = [along(c, cum, lo)];
+  for (let i = 0; i < c.length; i++) if (cum[i] > lo && cum[i] < hi) out.push(c[i]);
+  out.push(along(c, cum, hi));
+  return a <= b ? out : out.reverse();
+}
+
+function tripHTML() {
+  const places = tripPlaces();
+  const byDept = {};
+  for (const f of places) (byDept[f.properties.dept ?? '—'] ??= []).push(f);
+  const opts = (sel) => `<option value="">${t('trip.choose')}</option>${Object.keys(byDept).sort().map((d) => `<optgroup label="${esc(d)}">${byDept[d].map((f) => `<option value="${f.properties.id}" ${f.properties.id === sel ? 'selected' : ''}>${esc(f.properties.name)}</option>`).join('')}</optgroup>`).join('')}`;
+  return `<h2>${t('trip.title')}</h2>
+    <p class="sub">${t('trip.sub')}</p>
+    <div class="trip-form">
+      <label><span>${t('trip.from')}</span><select id="tripFrom">${opts(state.trip.from)}</select></label>
+      <button class="icon-btn" id="tripSwap" title="${t('trip.swap')}" aria-label="${t('trip.swap')}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
+      <label><span>${t('trip.to')}</span><select id="tripTo">${opts(state.trip.to)}</select></label>
+    </div>
+    <div id="tripOut"></div>`;
+}
+function wireTrip(box, key, move) {
+  const from = box.querySelector('#tripFrom'), to = box.querySelector('#tripTo');
+  from.onchange = () => ((state.trip.from = Number(from.value) || null), runTrip(true));
+  to.onchange = () => ((state.trip.to = Number(to.value) || null), runTrip(true));
+  box.querySelector('#tripSwap').onclick = () => {
+    [state.trip.from, state.trip.to] = [state.trip.to, state.trip.from];
+    from.value = state.trip.from ?? '';
+    to.value = state.trip.to ?? '';
+    runTrip(true);
+  };
+  runTrip(move);
+}
+function runTrip(move) {
+  const out = $('#tripOut');
+  if (!out) return;
+  const { from, to } = state.trip;
+  const ends = [from, to].filter(Boolean).map((id) => byId.get(id));
+  setHL(ends, '#ffffff');
+  if (!from || !to) {
+    out.innerHTML = '';
+    if (move && ends.length) fitFeature(ends[0]);
+    return;
+  }
+  if (from === to) return (out.innerHTML = `<p class="note">${t('trip.same')}</p>`);
+  const r = findTrip(from, to);
+  if (!r) return (out.innerHTML = `<p class="note">${t('trip.none')}</p>`);
+  // Group consecutive pieces of the same route into one leg.
+  const legs = [];
+  for (const s of r.steps) {
+    const last = legs.at(-1);
+    if (last && last.f === s.f) (last.km += s.km), (last.hrs += s.hrs), last.pieces.push(s);
+    else legs.push({ f: s.f, km: s.km, hrs: s.hrs, pieces: [s] });
+  }
+  const accessKm = r.access * 1.3;
+  const km = legs.reduce((a, l) => a + l.km, 0) + accessKm;
+  const car = legs.reduce((a, l) => a + l.hrs, 0) + accessKm / 30;
+  const train = legs.reduce((a, l) => a + (l.f.properties.mode === RAIL_MODE ? l.km / ENG.rail.train : l.hrs), 0) + accessKm / 30;
+  const usesRail = legs.some((l) => l.f.properties.mode === RAIL_MODE && l.km > 5);
+  let tun = 0, via = 0;
+  for (const l of legs) {
+    const parts = numbers?.routes[l.f.properties.id];
+    if (!parts || !l.f.properties.km) continue;
+    tun += ((parts.tunnel ?? 0) * l.km) / l.f.properties.km;
+    via += ((parts.viaduct ?? 0) * l.km) / l.f.properties.km;
+  }
+  const ferry = legs.some((l) => l.f.properties.category === 'ferry');
+  out.innerHTML = `<div class="eng" style="margin-top:14px">
+      <div class="eng-tiles">
+        <div><b>${fmtMin(car)}</b><span>${t('eng.car')}</span></div>
+        ${usesRail ? `<div><b>${fmtMin(train)}</b><span>${t('trip.withTrain')}</span></div>` : ''}
+        <div><b>${fmtKm(km)}</b><span>${t('fact.length')}</span></div>
+      </div>
+      ${tun > 0.5 || via > 0.5 ? `<p class="note" style="margin-top:4px">${t('trip.built', { tun: fmtKm(tun), via: fmtKm(via) })}</p>` : ''}
+      ${ferry ? `<p class="note" style="margin-top:4px">${t('trip.ferry')}</p>` : ''}
+      <p class="source" style="margin:8px 0 0">${t('trip.note')}</p>
+    </div>
+    <p class="sub-head">${t('trip.steps')}</p>
+    <ul class="list">${legs.map((l) => itemHTML(l.f, fmtKm(l.km))).join('')}</ul>`;
+  out.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
+  const pathFeats = r.steps.map((s) => ({ geometry: { type: 'LineString', coordinates: sliceLine(s.f, s.fwd ? s.d0 : s.d1, s.fwd ? s.d1 : s.d0) }, properties: { category: s.f.properties.category, c: '#ffffff' } }));
+  setHL([...pathFeats, ...ends], '#ffffff');
+  if (move) fitFeats(pathFeats);
+}
+
+// ===========================================================================
+// Guided tour and first-visit hint
+// ===========================================================================
+const byName = (rx, cat) => plan.features.filter((f) => (!cat || f.properties.category === cat) && rx.test(f.properties.name));
+const TOUR = [
+  () => {
+    setHL(collSet('trunks'));
+    fitView(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 30 : 0, bearing: 0, ...MOVE, duration: 1800 });
+  },
+  () => {
+    const ring = byName(/^Port-au-Prince Périphérique/, 'ring');
+    const sts = plan.features.filter((f) => f.properties.category === 'station' && ring[0] && distToLineKm(f.geometry.coordinates, ring[0].geometry.coordinates) < 2);
+    setHL([...ring, ...sts]);
+    fitFeats(ring, { maxZoom: 11.5, duration: 2200 });
+  },
+  () => {
+    const feats = plan.features.filter((f) => f.properties.tunnel);
+    setHL(feats);
+    fitFeats(feats, { duration: 2200 });
+  },
+  () => {
+    const feats = collSet('islands');
+    setHL(feats);
+    fitFeats(feats, { duration: 2200 });
+  },
+  () => {
+    setHL([]);
+    state.devThemes = new Set(['energy', 'water', 'agri', 'housing']);
+    state.devStatus = new Set(['proposed']);
+    applyDevFilters();
+    renderDevPanel();
+    map.flyTo({ center: [-72.55, 19.2], zoom: 9.4, pitch: state.terrain ? 40 : 0, bearing: 0, padding: pad(), ...MOVE, duration: 2200 });
+  },
+  () => {
+    tourRestoreDev();
+    setHL([]);
+    fitView(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 30 : 0, bearing: 0, ...MOVE, duration: 2000 });
+  },
+];
+function startTour() {
+  hideHint();
+  const begin = () => {
+    tour = { i: 0, devThemes: new Set(state.devThemes), devStatus: new Set(state.devStatus), collapsed: state.collapsed };
+    if (state.dept) setDept(null, { move: false });
+    if (PHONE.matches) {
+      setSheet('peek');
+      $('#panel').classList.add('collapsed'); // hidden for the tour without changing the saved preference
+      $('#openPanel').hidden = true;
+    }
+    showStep(0);
+  };
+  if (state.selected != null || state.page) leaveToHome(begin);
+  else begin();
+}
+function tourRestoreDev() {
+  if (!tour) return;
+  state.devThemes = new Set(tour.devThemes);
+  state.devStatus = new Set(tour.devStatus);
+  applyDevFilters();
+  renderDevPanel();
+}
+function showStep(i) {
+  tour.i = i;
+  const n = TOUR.length;
+  const box = $('#tour');
+  const last = i === n - 1;
+  const railKm = plan.features.filter((f) => ['corridor', 'trunk'].includes(f.properties.category)).reduce((s, f) => s + f.properties.km, 0);
+  box.innerHTML = `<div class="tour-top"><span class="tour-step">${i + 1} / ${n}</span><button class="icon-btn" id="tourX" aria-label="${t('tour.close')}">${ICONS.close}</button></div>
+    <h3>${t(`tour.${i + 1}.t`)}</h3>
+    <p>${t(`tour.${i + 1}.p`, { km: fmtKm(railKm) })}</p>
+    <div class="tour-dots">${TOUR.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
+    ${last ? `<div class="tour-btns wrap"><button class="btn primary" id="tourTrip">${ICONS.route} ${t('btn.trip')}</button><button class="btn" id="tourNum">${t('btn.numbers')}</button></div>` : ''}
+    <div class="tour-btns">${i ? `<button class="btn" id="tourPrev">${t('tour.prev')}</button>` : '<span></span>'}<button class="btn ${last ? '' : 'primary'}" id="tourNext">${t(last ? 'tour.done' : 'tour.next')}</button></div>`;
+  box.hidden = false;
+  box.querySelector('#tourX').onclick = endTour;
+  box.querySelector('#tourPrev')?.addEventListener('click', () => showStep(i - 1));
+  box.querySelector('#tourNext').onclick = () => (last ? endTour() : showStep(i + 1));
+  box.querySelector('#tourTrip')?.addEventListener('click', () => (endTour(), openPage('trip')));
+  box.querySelector('#tourNum')?.addEventListener('click', () => (endTour(), openPage('numbers')));
+  if (!changeLang.busy) TOUR[i]();
+}
+function endTour() {
+  if (!tour) return;
+  tourRestoreDev();
+  setHL([]);
+  const { collapsed } = tour;
+  tour = null;
+  $('#tour').hidden = true;
+  if (PHONE.matches) {
+    $('#panel').classList.toggle('collapsed', collapsed);
+    $('#openPanel').hidden = !collapsed;
+    if (!collapsed) setSheet('peek');
+  }
+}
+
+function maybeShowHint(again = false) {
+  let seen = false;
+  try {
+    seen = localStorage.getItem('hintSeen') === '1';
+  } catch {
+    /* storage unavailable */
+  }
+  if ((seen && !again) || tour || state.selected != null || state.page) return;
+  const box = $('#tour');
+  box.innerHTML = `<div class="tour-top"><span class="tour-step">${t('hint.t')}</span><button class="icon-btn" id="hintX" aria-label="${t('tour.close')}">${ICONS.close}</button></div>
+    <p>${t('hint.p')}${PHONE.matches ? ` ${t('hint.pPhone')}` : ''}</p>
+    <div class="tour-btns"><button class="btn" id="hintOk">${t('hint.ok')}</button><button class="btn primary" id="hintTour">${t('hint.tour')}</button></div>`;
+  box.hidden = false;
+  box.classList.add('hint');
+  box.querySelector('#hintX').onclick = hideHint;
+  box.querySelector('#hintOk').onclick = hideHint;
+  box.querySelector('#hintTour').onclick = startTour;
+}
+function hideHint() {
+  const box = $('#tour');
+  box.classList.remove('hint');
+  if (!tour) box.hidden = true;
+  try {
+    localStorage.setItem('hintSeen', '1');
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function hideHintIfShown() {
+  if ($('#tour')?.classList.contains('hint')) hideHint();
+}
+
+// MapLibre's fitBounds adds the map's own padding (left over from earlier eased moves) to the padding it is
+// given, which can exceed a phone screen. Drop the map's padding first without moving the view, then fit.
+function clearPadding() {
+  const pd = map.getPadding();
+  if (!pd.top && !pd.bottom && !pd.left && !pd.right) return;
+  map.stop();
+  const c = map.getCanvas();
+  map.jumpTo({ center: map.unproject([c.clientWidth / 2, c.clientHeight / 2]), padding: NO_PAD });
+}
+function fitView(bounds, opts) {
+  clearPadding();
+  if (map.cameraForBounds(bounds, { padding: opts.padding })) map.fitBounds(bounds, opts);
 }

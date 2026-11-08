@@ -34,6 +34,16 @@ sh tools/fetch-sources.sh
 node tools/build-dev.mjs
 ```
 
+## Plan in numbers and trips
+
+`tools/build-numbers.mjs` estimates the construction mix (at grade, mountain, viaduct, tunnel) of every route with the same method as the in-app Engineering & cost card, and counts how many people live near the network. It writes `data/numbers.json`, which feeds the **Plan in numbers** page and the tunnel/bridge totals in **Plan a trip**. Re-run it after the plan changes:
+
+```bash
+node tools/build-numbers.mjs
+```
+
+The trip planner builds its road graph in the browser from `data/plan.geojson`; times use the design speeds in `ENG` (app.js), not today's roads.
+
 ## Publish
 
 Any static host works. On GitHub Pages: Settings → Pages → Deploy from a branch → `main` / root.

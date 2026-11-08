@@ -1,4 +1,5 @@
-import { DEV } from './i18n-dev.js?v=20261109b';
+import { DEV } from './i18n-dev.js?v=20261110a';
+import { UX } from './i18n-ux.js?v=20261110a';
 
 // Interface translations. Place and route names from the plan are proper names and stay as written.
 // Languages: the five most spoken in the Americas, including Haitian Creole.
@@ -539,6 +540,7 @@ const S = {
 };
 
 for (const code of Object.keys(DEV)) Object.assign(S[code], DEV[code]);
+for (const code of Object.keys(UX)) Object.assign(S[code], UX[code]);
 
 let current = 'en';
 

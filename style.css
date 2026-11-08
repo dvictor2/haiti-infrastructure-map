@@ -478,3 +478,117 @@ button { cursor: pointer; }
   /* Room so the floating Map button never covers the last lines of the panel. */
   .panel[data-state='full'] .panel-body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- Tappable tiles, tags and explanations ---------- */
+.tap { cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; }
+button.stat, button.badge, button.leg { font: inherit; color: inherit; text-align: left; }
+button.stat { width: 100%; cursor: pointer; }
+.fact.tap { padding-right: 12px; }
+.eng-tiles .tap, .stat.tap { padding-right: 16px; }
+.fact.tap::after { right: 4px; top: 4px; }
+.fact.tap.nav::after { right: 5px; top: 1px; }
+.fact.tap:hover, .fact.tap.on { background: var(--card-hover); border-color: rgba(255, 255, 255, 0.22); }
+.stat.tap:hover b, .eng-tiles .tap:hover b { color: #fff; }
+.stat.tap:hover { border-left-color: var(--accent); }
+/* Small corner marks: › opens something, i explains, ⧉ copies. Plain tiles have no mark. */
+.tap::after { position: absolute; top: 6px; right: 6px; font-size: 11px; line-height: 14px; color: var(--faint); }
+.tap.nav::after { content: '›'; font-size: 16px; top: 3px; right: 7px; color: var(--muted); }
+.tap.info::after { content: 'i'; width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; text-align: center; font-weight: 700; font-size: 9.5px; font-style: italic; font-family: Georgia, serif; }
+.tap.copy::after { content: '⧉'; }
+.eng-tiles .tap::after { top: 0; right: 2px; }
+.stat.tap::after { top: 2px; right: 2px; }
+.badge.tap { cursor: pointer; padding-right: 22px; }
+.badge.tap::after { top: 50%; transform: translateY(-50%); right: 5px; }
+.badge.tap:hover, .badge.tap.on { background: var(--card-hover); color: var(--text); }
+.eng-tiles .tap.on, .eng-tiles .tap:hover { border-left-color: var(--accent); }
+.legend-row.legs { gap: 6px; }
+.leg { display: inline-flex; align-items: center; gap: 0; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.leg:hover, .leg.on { color: var(--text); border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
+.explain {
+  margin: -4px 0 14px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.5; color: var(--text);
+  background: rgba(52, 211, 153, 0.07); border: 1px solid rgba(52, 211, 153, 0.25); animation: explainIn 0.18s ease;
+}
+.badges + .explain { margin-top: 10px; }
+.explain p { margin: 8px 0 0; color: var(--muted); }
+@keyframes explainIn { from { opacity: 0; transform: translateY(-4px); } }
+.calc { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.calc td { padding: 3px 4px 3px 0; white-space: nowrap; }
+.calc td:first-child { white-space: normal; }
+.calc td:last-child { text-align: right; font-weight: 600; }
+.calc i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 6px; }
+.calc .total td { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 700; color: #FDE68A; }
+.count-key { margin: -2px 0 8px; font-size: 11.5px; color: var(--faint); }
+.count-key b { color: var(--text); font-weight: 600; }
+
+/* ---------- Home actions & pages ---------- */
+.home-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 18px; }
+.home-actions .btn { flex: 1 1 auto; justify-content: center; }
+.back-btn { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 13.5px; padding: 4px 6px 4px 0; cursor: pointer; }
+.page h2 { margin-top: 2px; }
+.eng-tiles.two { grid-template-columns: 1fr 1fr; }
+.trip-form { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; margin-top: 14px; }
+.trip-form label { display: grid; gap: 4px; min-width: 0; }
+.trip-form label span { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.trip-form select {
+  width: 100%; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font: inherit; font-size: 14px;
+}
+.trip-form select option, .trip-form select optgroup { background: #161b22; color: var(--text); }
+.trip-form .icon-btn { margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; margin: 0 -2px 16px; }
+.dept-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dept-table th { text-align: left; padding: 0; }
+.dept-table th button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 6px 6px 0; cursor: pointer; text-align: left; }
+.dept-table th button.on { color: var(--accent); }
+.dept-table td { padding: 8px 6px 8px 0; border-top: 1px solid var(--line); white-space: nowrap; }
+.dept-table td:first-child { font-weight: 600; white-space: normal; }
+.dept-table tbody tr[data-dept] { cursor: pointer; }
+.dept-table tbody tr[data-dept]:hover td { background: var(--card-hover); }
+.dept-table tr.muted td { color: var(--faint); font-weight: 500; }
+
+/* Lists: long names wrap instead of being cut off. */
+.item .t b { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
+.item .t small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* Sources folded away */
+details.credits summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 12px; list-style: none; }
+details.credits summary::-webkit-details-marker { display: none; }
+details.credits summary::before { content: '▸ '; }
+details.credits[open] summary::before { content: '▾ '; }
+details.credits p { margin: 8px 0 0; }
+
+/* ---------- Tour card / first-visit hint ---------- */
+.tour {
+  position: fixed; z-index: 40; left: calc(50% + 200px); bottom: 28px; transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px)); padding: 14px 16px 14px; border-radius: 16px;
+  background: rgba(13, 17, 23, 0.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); animation: explainIn 0.25s ease;
+}
+.panel.collapsed ~ .tour { left: 50%; }
+.tour-top { display: flex; align-items: center; justify-content: space-between; }
+.tour-step { font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.tour h3 { margin: 6px 0 4px; font-size: 17px; }
+.tour p { margin: 6px 0 0; color: var(--muted); line-height: 1.5; font-size: 13.5px; }
+.tour-dots { display: flex; gap: 5px; margin: 12px 0 0; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--line); }
+.tour-dots i.on { width: 18px; background: var(--accent); }
+.tour-btns { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.tour-btns.wrap { justify-content: flex-start; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .tour { left: 50%; top: calc(12px + env(safe-area-inset-top)); bottom: auto; width: calc(100vw - 24px); }
+  .tour p { font-size: 15px; }
+  .tour h3 { font-size: 19px; }
+  .trip-form { grid-template-columns: 1fr; }
+  .trip-form .icon-btn { justify-self: center; transform: rotate(0); margin: 0; }
+  .trip-form select { font-size: 16px; }
+  .dept-table { font-size: 13.5px; }
+  .home-actions .btn { flex: 1 1 40%; }
+  .tap.info::after { width: 16px; height: 16px; font-size: 11px; line-height: 16px; }
+  .explain { font-size: 14.5px; }
+}
+@media (max-width: 760px) {
+  /* Three tiles share a row: keep whole words like "Grand'Anse" on one line. */
+  .facts .fact b { font-size: 15px; overflow-wrap: break-word; }
+  .facts .fact { padding: 8px 9px; }
+  .facts .fact.tap { padding-right: 12px; }
+}
