@@ -1079,8 +1079,10 @@ function buildPanel() {
     });
     const end = (e) => {
       if (!drag || drag.z !== z) return;
-      const { moved, state: from } = drag;
-      const dy = e.clientY - drag.y;
+      const { moved } = drag;
+      const vh = window.innerHeight;
+      // Height of the sheet where the finger let go.
+      const released = clamp(drag.h - (e.clientY - drag.y), 0, vh);
       sheet.style.transition = '';
       sheet.style.height = '';
       drag = null;
@@ -1088,14 +1090,13 @@ function buildPanel() {
       // Swallow only the click that ends this drag (if the browser sends one), never a later tap.
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 350);
-      if (dy < -40) setSheet('full');
-      else if (dy > 40) {
-        if (from === 'full' && dy < window.innerHeight * 0.45) setSheet('peek');
-        else {
-          setSheet('peek');
-          setCollapsed(true);
-        }
-      }
+      // Snap to whichever size is closest to where the finger let go: hidden, small, middle or full.
+      const snaps = [['hidden', 40], ['peek', 152], ['half', vh * 0.52], ['full', vh]];
+      const [name] = snaps.reduce((a, b) => (Math.abs(b[1] - released) < Math.abs(a[1] - released) ? b : a));
+      if (name === 'hidden') {
+        setSheet('peek');
+        setCollapsed(true);
+      } else setSheet(name);
     };
     z.addEventListener('pointerup', end);
     z.addEventListener('pointercancel', end);
