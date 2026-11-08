@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261114b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261115c';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -305,12 +305,15 @@ const DATA_LAYERS = [
   { id: 'points-infra', filter: ['all', isPoint, inCats(INFRA)], type: 'circle', minzoom: 8.6, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8.5, 3.5, 13, 6], 'circle-color': ['match', ['get', 'category'], 'station', '#1e1533', 'terminal', '#0c2a3a', '#082f35'], 'circle-stroke-color': catColor, 'circle-stroke-width': 2.5 } },
   { id: 'points-local', filter: ['all', isPoint, tierIs('local')], type: 'circle', minzoom: 9.4, local: true, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 3, 14, 5], 'circle-color': catColor, 'circle-stroke-color': '#0d1117', 'circle-stroke-width': 1.5 } },
   { id: 'points-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'circle', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'category'], 'water', 2.5, 4], 12, ['match', ['get', 'category'], 'water', 4, 7]], 'circle-color': catColor, 'circle-stroke-color': '#0d1117', 'circle-stroke-width': 2 } },
-  { id: 'labels-lines', filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'water'])], type: 'symbol', minzoom: 8.4, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-max-angle': 30, 'symbol-spacing': 420, 'text-padding': 4 }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
+  // Local road and micro-ring names, close up only. Labels are listed lowest priority first: where two would
+  // overlap, the one higher in this list wins (national towns → national routes → local towns → local roads).
+  { id: 'labels-lines-local', filter: ['all', isLine, tierIs('local'), inCats(['feeder', 'urban', 'ring'])], type: 'symbol', minzoom: 11, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 10.5, 'text-max-angle': 30, 'symbol-spacing': 380, 'text-padding': 6 }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
   { id: 'labels-local', filter: ['all', isPoint, tierIs('local')], type: 'symbol', minzoom: 10.2, local: true, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11.5, 'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': '#E2E8F0', 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
   { id: 'labels-infra', filter: ['all', isPoint, inCats(INFRA)], type: 'symbol', minzoom: 10.6, layout: { 'text-field': infraLabel(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
+  { id: 'labels-lines', filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'water'])], type: 'symbol', minzoom: 8.4, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-max-angle': 30, 'symbol-spacing': 420, 'text-padding': 4 }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
   { id: 'labels-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'symbol', minzoom: 4.8, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10.5, 10, 13.5], 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': ['match', ['get', 'category'], 'water', '#A5F3FC', 'site', '#FED7AA', '#FFFFFF'], 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
 ];
-const INTERACTIVE = ['haz-quakes', 'dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill', 'haz-storms'];
+const INTERACTIVE = ['icons-plan-major', 'icons-plan-minor', 'icons-dev-main', 'icons-dev-minor', 'haz-quakes', 'dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill', 'haz-storms'];
 
 function catFilter() {
   const hidden = [...state.hidden];
@@ -328,6 +331,11 @@ function applyFilters() {
     map.setPaintProperty(L.id, prop, typeof base === 'number' ? deptOpacity(base, base * 0.16) : base);
     if (L.type === 'circle') map.setPaintProperty(L.id, 'circle-stroke-opacity', deptOpacity(1, 0.16));
     if (L.local) map.setLayerZoomRange(L.id, state.localAlways ? 0 : L.minzoom, 24);
+  }
+  for (const [id, base] of Object.entries(PLAN_ICON_FILTERS)) {
+    if (!map.getLayer(id)) continue;
+    map.setFilter(id, ['all', base, catFilter()]);
+    map.setPaintProperty(id, 'icon-opacity', deptOpacity(1, 0.2));
   }
   map.setFilter('dept-focus', ['==', ['get', 'name'], state.dept ?? '']);
   map.setFilter('dept-tint', ['==', ['get', 'name'], state.dept ?? '']);
@@ -399,9 +407,10 @@ map.on('load', async () => {
     if (L.type !== 'symbol') continue;
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
   }
+  addIconLayers();
 
-  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
-  map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } });
+  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } }, 'labels-local');
+  map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } }, 'labels-local');
   if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: 1.5 });
   // Bigger map labels on phones.
   if (PHONE.matches) {
@@ -918,6 +927,7 @@ function renderDetail(f) {
     <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k, act, icon]) => factHTML(v, k, act, '', icon)).join('')}</div>
     <div class="actions">
       ${['city', 'town'].includes(p.category) ? `<button class="btn primary" id="btnTrip">${ICONS.route} ${t('btn.tripFrom')}</button>` : ''}
+      ${isLineF && ROAD_CATS.includes(p.category) && routeEnds(f) ? `<button class="btn" id="btnTripRoute">${ICONS.route} ${t('btn.trip')}</button>` : ''}
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
@@ -932,6 +942,7 @@ function renderDetail(f) {
   el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, { whole: true }));
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
+  el.querySelector('#btnTripRoute')?.addEventListener('click', () => openPage('trip'));
   el.querySelector('#btnTrip')?.addEventListener('click', () => {
     state.trip.from = canonicalPlace(p.id);
     openPage('trip');
@@ -1633,7 +1644,7 @@ function addDevLayers() {
   map.addLayer({ id: 'dev-sel-line', type: 'line', source: 'dev', filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 1.4 } });
 }
 
-const DEV_LAYERS = ['dev-fill', 'dev-lines-solid', 'dev-lines-dashed', 'dev-points-minor', 'dev-points-main', 'dev-labels'];
+const DEV_LAYERS = ['icons-dev-main', 'icons-dev-minor', 'dev-fill', 'dev-lines-solid', 'dev-lines-dashed', 'dev-points-minor', 'dev-points-main', 'dev-labels'];
 const DEV_BASE = {};
 function applyDevFilters() {
   if (!map.getSource('dev')) return;
@@ -2129,6 +2140,11 @@ function openPage(name) {
   stopFly();
   if (tour) endTour();
   hideHintIfShown();
+  // Planning a trip while a route is open: start from that route's two end towns (swap ⇅ flips them).
+  if (name === 'trip' && state.selected != null && byId?.has(state.selected)) {
+    const ends = routeEnds(byId.get(state.selected));
+    if (ends) [state.trip.from, state.trip.to] = ends;
+  }
   if (state.selected != null) {
     closeSelection.saved = null;
     clearSelection();
@@ -2985,4 +3001,103 @@ function panelResize() {
 // Phones: before moving the camera to something, lower a high panel so the map is actually visible.
 function showMap() {
   if (PHONE.matches && ['tall', 'full'].includes($('#panel').dataset.state)) setSheet('peek');
+}
+
+// The towns at a route's two ends (nearest city or town within 25 km of each end), for Plan a trip.
+// Ring roads and routes whose ends are the same town have none.
+function routeEnds(f) {
+  if (!f || f.geometry.type !== 'LineString' || f.properties.category === 'ring') return null;
+  const c = f.geometry.coordinates;
+  const near = (pt) => {
+    let best = null;
+    for (const pl of tripPlaces()) {
+      const d = haversine(pt, pl.geometry.coordinates) - (pl.properties.category === 'city' ? 3 : 0);
+      if (d < 25 && (!best || d < best.d)) best = { d, id: pl.properties.id };
+    }
+    return best?.id ?? null;
+  };
+  // Names first: "PAP to Hinche" → Port-au-Prince and Hinche (in the route's direction).
+  const ALIAS = { pap: 'port-au-prince', cayes: 'les cayes', 'p-goave': 'petit-goave', 'st-marc': 'saint-marc' };
+  const byName = (part) => {
+    let k = norm(part.replace(/\(.*?\)/g, '')).trim();
+    k = ALIAS[k] ?? k;
+    if (k.length < 3) return null;
+    const hit = tripPlaces().filter((pl) => placeKey(pl.properties.name).startsWith(k) || k.startsWith(placeKey(pl.properties.name)))
+      .sort((x, y) => (y.properties.category === 'city') - (x.properties.category === 'city'));
+    return hit[0]?.properties.id ?? null;
+  };
+  const parts = f.properties.name.split(/\s+to\s+/i);
+  let a = null, b = null;
+  if (parts.length === 2) [a, b] = [byName(parts[0]), byName(parts[1])];
+  a ??= near(c[0]);
+  b ??= near(c.at(-1));
+  return a && b && a !== b ? [a, b] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Map icons (Google-Maps style): round badges drawn from the app's icon set, shown as you zoom in.
+// Major places from regional zoom; small ones only up close. Proposed = filled badge, existing = dark badge.
+// ---------------------------------------------------------------------------
+const PLAN_ICON_FILTERS = {
+  'icons-plan-major': ['all', isPoint, inCats(['station', 'terminal', 'site'])],
+  'icons-plan-minor': ['all', isPoint, inCats(['toll', 'rivercross'])],
+};
+// Draws one badge on a canvas (synchronously, from the SVG path data in ICO) and registers it with the map.
+function addBadge(name, iconKey, fill, fg) {
+  if (map.hasImage(name)) return;
+  const S = 64, R = 28;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.beginPath();
+  ctx.arc(S / 2, S / 2, R, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = fill === '#0d1117' ? fg : '#0d1117';
+  ctx.stroke();
+  const k = 1.5; // 24-unit icon → 36 px, centred
+  ctx.save();
+  ctx.translate(S / 2 - 12 * k, S / 2 - 12 * k);
+  ctx.scale(k, k);
+  ctx.strokeStyle = fg;
+  ctx.lineWidth = 2.3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [, tag, attrs] of (ICO[iconKey] ?? '').matchAll(/<(path|circle|rect)([^>]*)\/>/g)) {
+    const a = Object.fromEntries([...attrs.matchAll(/([a-z]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+    if (tag === 'path') ctx.stroke(new Path2D(a.d));
+    else if (tag === 'circle') {
+      ctx.beginPath();
+      ctx.arc(+a.cx, +a.cy, +a.r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.roundRect(+a.x, +a.y, +a.width, +a.height, +(a.rx ?? 0));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  map.addImage(name, ctx.getImageData(0, 0, S, S), { pixelRatio: 2.5 });
+}
+const isLight = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.62;
+};
+function addIconLayers() {
+  for (const k of ['station', 'terminal', 'site', 'toll', 'rivercross']) addBadge(`pi-${k}`, CAT_ICON[k], CATS[k].color, isLight(CATS[k].color) ? '#0d1117' : '#ffffff');
+  for (const [k, c] of Object.entries(DEV_THEMES)) {
+    addBadge(`dp-${k}`, THEME_ICON[k], c, isLight(c) ? '#0d1117' : '#ffffff');
+    addBadge(`de-${k}`, THEME_ICON[k], '#0d1117', c);
+  }
+  const size = PHONE.matches ? 1.15 : 1;
+  const icon = (image, extra = {}) => ({ 'icon-image': image, 'icon-size': ['interpolate', ['linear'], ['zoom'], 9.5, 0.75 * size, 13, size], 'icon-allow-overlap': true, ...extra });
+  const before = 'labels-lines-local';
+  map.addLayer({ id: 'icons-plan-major', type: 'symbol', source: 'plan', minzoom: 9.5, filter: PLAN_ICON_FILTERS['icons-plan-major'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
+  map.addLayer({ id: 'icons-plan-minor', type: 'symbol', source: 'plan', minzoom: 11, filter: PLAN_ICON_FILTERS['icons-plan-minor'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
+  const devImg = ['case', ['==', ['get', 'status'], 'proposed'], ['concat', 'dp-', ['get', 'theme']], ['concat', 'de-', ['get', 'theme']]];
+  const pt = ['all', isPoint, ['!=', ['get', 'kind'], 'protectedLabel']];
+  // Proposed sites draw above existing ones.
+  map.addLayer({ id: 'icons-dev-minor', type: 'symbol', source: 'dev', minzoom: 12, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
+  map.addLayer({ id: 'icons-dev-main', type: 'symbol', source: 'dev', minzoom: 9.5, filter: ['all', pt, ['!', ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
 }
