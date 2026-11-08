@@ -269,11 +269,13 @@ for (const e of osmEls) {
   } else if (t.waterway === 'canal' && e.type === 'way') {
     add({ theme: 'water', kind: 'canal', status: 'existing', name: t.name ?? null, src: 'osm' }, { type: 'LineString', coordinates: wayCoords(e).map(r5) });
   } else if (['water_works', 'water_tower', 'reservoir_covered'].includes(t.man_made)) {
-    add({ theme: 'water', kind: 'waterpoint', status: 'existing', name: t.name ?? null, sub: t.man_made, src: 'osm' }, { type: 'Point', coordinates: c });
+    // Many OpenStreetMap "water works" in Haiti are water kiosks selling treated or bottled water, not public systems.
+    add({ theme: 'water', kind: t.man_made === 'water_works' ? 'waterKiosk' : 'waterTower', status: 'existing', name: t.name ?? null, src: 'osm' }, { type: 'Point', coordinates: c });
   } else if ((t.waterway === 'dam' || t.man_made === 'dam') && /p[ée]ligre/i.test(t.name ?? '')) {
     add({ theme: 'water', kind: 'dam', status: 'existing', name: t.name, src: 'osm' }, { type: 'Point', coordinates: c });
   } else if (t.amenity === 'hospital') {
-    add({ theme: 'health', kind: 'hospital', status: 'existing', name: t.name ?? null, major: /h[oô]pital|hospital|centre hospitalier|\bCHU\b|\bHUEH\b/i.test(t.name ?? ''), src: 'osm' }, { type: 'Point', coordinates: c });
+    const major = /h[oô]pital|hospital|centre hospitalier|\bCHU\b|\bHUEH\b/i.test(t.name ?? '');
+    add({ theme: 'health', kind: major ? 'hospital' : 'clinic', status: 'existing', name: t.name ?? null, major, src: 'osm' }, { type: 'Point', coordinates: c });
   } else if (t.amenity === 'university') {
     add({ theme: 'health', kind: 'university', status: 'existing', name: t.name ?? null, src: 'osm' }, { type: 'Point', coordinates: c });
   } else if (t.landuse === 'industrial' && /parc industriel|zone franche|codevi|caracol|cimenterie|terminal p[ée]trolier|moulins d'ha|brasserie nationale/i.test(t.name ?? '')) {
@@ -482,12 +484,39 @@ for (const ring of natRings) {
     add({ theme: 'economy', kind: 'dryPort', status: 'proposed', place: 'Hinche', routes: hinche.length }, { type: 'Point', coordinates: hinche[0].geometry.coordinates.map((v, i) => (v + hub.geometry.coordinates[i]) / 2) });
   }
 }
-const borderPts = [
-  ['Belladère', by('city').find((f) => /Belladère/.test(f.properties.name))?.geometry.coordinates],
-  ['Malpasse', P.find((f) => /Jimaní/.test(f.properties.name) && f.geometry.type === 'LineString')?.geometry.coordinates.at(-1)],
-  ['Anse-à-Pitre', by('city').find((f) => /Anse-à-Pitre/.test(f.properties.name))?.geometry.coordinates],
-];
-for (const [name, p] of borderPts) if (p) add({ theme: 'economy', kind: 'borderZone', status: 'proposed', place: name }, { type: 'Point', coordinates: p });
+// Border trade & customs zones: every Haitian town within 12 km of the border, projected onto the border,
+// plus where national corridors reach it. At least 12 km apart.
+const border = P.find((f) => f.properties.category === 'border');
+const borderLine = border.geometry.coordinates;
+const nearestOnBorder = (p) => {
+  let best = { d: Infinity };
+  for (let i = 1; i < borderLine.length; i++) {
+    const a = borderLine[i - 1], b = borderLine[i];
+    const sx = kx(p[1]);
+    const ax = (a[0] - p[0]) * sx, ay = (a[1] - p[1]) * KY, bx = (b[0] - p[0]) * sx, by = (b[1] - p[1]) * KY;
+    const dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1e-12)));
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best.d) best = { d, pt: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])], i };
+  }
+  return best;
+};
+const borderCand = [];
+for (const f of railLines) for (const end of [f.geometry.coordinates[0], f.geometry.coordinates.at(-1)]) {
+  const n = nearestOnBorder(end);
+  if (n.d < 6) borderCand.push({ p: n.pt, place: /Jiman[ií]/i.test(f.properties.name) ? 'Malpasse' : nearestPlace(end, 20) ?? f.properties.name, corridor: true, pop: popWithin(end, 10) });
+}
+for (const f of places) {
+  const n = nearestOnBorder(f.geometry.coordinates);
+  if (n.d < 12) borderCand.push({ p: n.pt, place: f.properties.name.replace(/\s*\(.*\)$/, '').replace(/ Border$/, ''), corridor: false, pop: stats.places[f.properties.id]?.p10 ?? 0 });
+}
+const borderZones = [];
+for (const c of borderCand.sort((a, b) => b.corridor - a.corridor || b.pop - a.pop)) {
+  if (borderZones.some((z) => haversine(z.p, c.p) < 12)) continue;
+  borderZones.push(c);
+  add({ theme: 'economy', kind: 'borderZone', status: 'proposed', place: c.place, corridor: c.corridor, people: Math.round(c.pop) }, { type: 'Point', coordinates: c.p });
+}
+
 for (const [name, p, landing] of [['Port-au-Prince', [-72.3, 18.555], 'Port-au-Prince'], ['Cap-Haïtien', [-72.19, 19.735], null]]) {
   add({ theme: 'economy', kind: 'techHub', status: 'proposed', place: name, landing, people: Math.round(popWithin(p, 25)) }, { type: 'Point', coordinates: p });
 }
@@ -542,6 +571,75 @@ for (const g of clusters(flood).filter((g) => g.length >= 2)) {
 }
 
 // ---------------------------------------------------------------------------
+// STRATEGIC zones: national security, critical infrastructure, research, natural resources
+// ---------------------------------------------------------------------------
+// Border security posts roughly every 25 km between the trade zones.
+{
+  let run = 0;
+  for (let i = 1; i < borderLine.length; i++) {
+    run += haversine(borderLine[i - 1], borderLine[i]);
+    const q = borderLine[i];
+    if (run >= 25 && !borderZones.some((z) => haversine(z.p, q) < 10)) {
+      add({ theme: 'strategic', kind: 'securityPost', status: 'proposed', place: nearestPlace(q, 25) ?? 'Haiti–DR border' }, { type: 'Point', coordinates: q });
+      run = 0;
+    }
+  }
+}
+// Coast guard stations at the main coastal Périphérique ports.
+for (const f of out.filter((f) => f.properties.kind === 'portHub' && ['Port-au-Prince', 'Cap-Haïtien', 'Les Cayes', 'Jérémie', 'Port-de-Paix', 'Fort-Liberté', 'Jacmel', 'Gonaïves'].includes(f.properties.place))) {
+  add({ theme: 'strategic', kind: 'coastGuard', status: 'proposed', place: f.properties.place }, { type: 'Point', coordinates: offset(f.geometry.coordinates, 0.4, 0.4) });
+}
+// Critical infrastructure protection: dams, airports, cable landings, the largest plants and industrial parks.
+const protect = [
+  ['Péligre dam', out.find((f) => f.properties.kind === 'dam')?.geometry.coordinates],
+  ['Toussaint Louverture airport', [-72.2925, 18.58]],
+  ['Cap-Haïtien airport', [-72.1948, 19.733]],
+  ...out.filter((f) => f.properties.kind === 'landing').map((f) => [`${f.properties.name} cable landing`, f.geometry.coordinates]),
+  ['Varreux power plant & fuel terminal', [-72.334, 18.574]],
+  ['Caracol industrial park', out.find((f) => /Caracol/.test(f.properties.name ?? ''))?.geometry.coordinates],
+];
+for (const [name, p] of protect) if (p) add({ theme: 'strategic', kind: 'protectZone', status: 'proposed', place: name }, { type: 'Point', coordinates: p });
+// Regional defence & civil-protection bases (north, centre, south): flat, lightly populated land near a corridor,
+// 8–20 km from the city, away from faults and farmland.
+for (const [city, cp] of [['Cap-Haïtien', [-72.2, 19.757]], ['Hinche', [-72.004, 19.143]], ['Les Cayes', [-73.755, 18.195]]]) {
+  const cand = cells.filter((c) => { const d = haversine(c.p, cp); return d > 8 && d < 20 && c.slope < 5 && c.dens < 150 && c.dRail < 4 && c.dFault > 2 && c.elev > 5 && !c.lake && !agriSet.has(c.i); });
+  if (!cand.length) continue;
+  const best = cand.reduce((a, b) => (b.dens + b.dRail * 20 < a.dens + a.dRail * 20 ? b : a));
+  add({ theme: 'strategic', kind: 'defenceBase', status: 'proposed', place: city, km: round(haversine(best.p, cp)), rail: round(best.dRail, 1) }, { type: 'Point', coordinates: best.p });
+}
+// Agricultural research stations on the four largest farm zones; seismic monitoring along active faults.
+for (const f of out.filter((f) => f.properties.kind === 'agriHub').sort((a, b) => b.properties.km2 - a.properties.km2).slice(0, 4)) {
+  add({ theme: 'strategic', kind: 'researchAgri', status: 'proposed', place: f.properties.place, km2: f.properties.km2 }, { type: 'Point', coordinates: offset(f.geometry.coordinates, -1.2, 0.8) });
+}
+{
+  const seis = [];
+  for (const l of faultLines.filter((l) => l.name)) {
+    for (const q of l.c) {
+      if (seis.length >= 12) break;
+      if (!dry(q) || seis.some((s) => haversine(s.q, q) < 40)) continue;
+      if (!depts.features.some((f) => f.geometry.coordinates.some((poly) => pointInRing(q, poly[0])))) continue;
+      seis.push({ q, name: l.name });
+      add({ theme: 'strategic', kind: 'seismicStation', status: 'proposed', place: nearestPlace(q, 25) ?? l.name, fault: l.name }, { type: 'Point', coordinates: q });
+    }
+  }
+}
+// Natural resources: the Massif du Nord gold–copper belt, and highland forests / watersheds to protect.
+const coarse = (list) => list.filter((c) => c.ix % 2 === 0 && c.iy % 2 === 0);
+{
+  const belt = coarse(cells.filter((c) => c.p[0] > -72.55 && c.p[0] < -71.7 && c.p[1] > 19.25 && c.p[1] < 19.75 && c.elev > 250 && c.elev < 1200 && !c.lake));
+  add({ theme: 'strategic', kind: 'mineralBelt', status: 'proposed', place: 'Massif du Nord', km2: round(belt.length * 4 * cellArea(19.5)), dept: 'Nord' }, { type: 'MultiPolygon', coordinates: belt.map((c) => squareAt(c.p[0] + D / 2, c.p[1] + D / 2, D)) });
+}
+{
+  const MASSIFS = [['Massif de la Hotte (Macaya)', [-74.0, 18.38]], ['Massif de la Selle', [-72.0, 18.35]], ['Chaîne des Matheux', [-72.5, 18.85]], ['Montagnes Noires', [-72.3, 19.05]], ['Massif du Nord', [-72.25, 19.45]], ['Péligre watershed', [-71.9, 18.95]]];
+  const steep = coarse(cells.filter((c) => c.elev > 800 && c.slope > 20 && !c.lake));
+  for (const [name, mp] of MASSIFS) {
+    const g = steep.filter((c) => MASSIFS.map(([n, p]) => [n, haversine(c.p, p)]).sort((a, b) => a[1] - b[1])[0][0] === name && haversine(c.p, mp) < 45);
+    if (g.length < 4) continue;
+    add({ theme: 'strategic', kind: 'forestZone', status: 'proposed', place: name, km2: round(g.length * 4 * cellArea(18.5)), dept: deptOf(mp) }, { type: 'MultiPolygon', coordinates: g.map((c) => squareAt(c.p[0] + D / 2, c.p[1] + D / 2, D)) });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Population grid for the density layer (2 km cells)
 // ---------------------------------------------------------------------------
 const G = 1 / 60;
@@ -556,6 +654,14 @@ const pop = [...agg].filter(([, v]) => v >= 5).map(([k, v]) => {
 });
 
 writeFileSync(new URL('../data/dev.geojson', import.meta.url), JSON.stringify({ type: 'FeatureCollection', features: out }));
+// Named rivers longer than 25 km (OpenStreetMap), for the Plan tab's water layer.
+{
+  const byName = {};
+  for (const w of riverWays) (byName[w.name] ??= []).push(w.c.map(r5));
+  const feats = Object.entries(byName).filter(([n]) => riverLen[n] >= 25).map(([name, lines], i) => ({ type: 'Feature', properties: { id: `r${i + 1}`, name, km: round(riverLen[name]) }, geometry: { type: 'MultiLineString', coordinates: lines } }));
+  writeFileSync(new URL('../data/rivers.geojson', import.meta.url), JSON.stringify({ type: 'FeatureCollection', features: feats }));
+  console.log('rivers:', feats.length);
+}
 writeFileSync(new URL('../data/pop.json', import.meta.url), JSON.stringify({ cell: G, year: 2023, total: TOTAL, points: pop }));
 writeFileSync(new URL('../data/stats.json', import.meta.url), JSON.stringify(stats));
 

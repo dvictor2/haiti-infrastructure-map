@@ -42,7 +42,7 @@ const DEPT_HINTS = {
   'Ouanaminthe Grid': 'Nord-Est', 'Port-de-Paix Grid': 'Nord-Ouest',
 };
 
-const CATEGORY_ORDER = ['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'urban', 'feeder', 'station', 'terminal', 'rivercross', 'water', 'border', 'city', 'town', 'site'];
+const CATEGORY_ORDER = ['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'urban', 'feeder', 'station', 'toll', 'terminal', 'rivercross', 'water', 'border', 'city', 'town', 'site'];
 const PAP_LINES = /^LOCAL: (Route de Delmas|Airport & Tabarre Line|Coastal Metro Line|Bourdon)/;
 
 function classify(spec) {
@@ -217,6 +217,35 @@ const features = HAITI_PROJECT_SPECS.map((spec, i) => {
   };
 });
 
+// The Haiti–DR border was drawn as three pieces; join them into one continuous line (north to south).
+{
+  const parts = features.filter((f) => f.properties.category === 'border');
+  if (parts.length > 1) {
+    const segs = parts.map((f) => f.geometry.coordinates.slice());
+    const start = segs.reduce((a, b) => (Math.max(b[0][1], b.at(-1)[1]) > Math.max(a[0][1], a.at(-1)[1]) ? b : a));
+    if (start[0][1] < start.at(-1)[1]) start.reverse();
+    let line = start.slice();
+    const rest = segs.filter((s) => s !== start);
+    while (rest.length) {
+      const end = line.at(-1);
+      let best = 0, flip = false, bd = Infinity;
+      rest.forEach((s, i) => {
+        const d0 = haversine(end, s[0]), d1 = haversine(end, s.at(-1));
+        if (d0 < bd) [bd, best, flip] = [d0, i, false];
+        if (d1 < bd) [bd, best, flip] = [d1, i, true];
+      });
+      const s = rest.splice(best, 1)[0];
+      line = line.concat(flip ? s.reverse() : s);
+    }
+    const keep = parts[0];
+    keep.geometry.coordinates = line;
+    keep.properties.name = 'Haiti–DR border';
+    keep.properties.subtitle = '';
+    keep.properties.km = Math.round(lengthKm(line) * 10) / 10;
+    for (const f of parts.slice(1)) features.splice(features.indexOf(f), 1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Derived features (computed from the plan's own geometry and rules)
 // ---------------------------------------------------------------------------
@@ -247,7 +276,7 @@ const compass = (c, p) => {
   const a = (Math.atan2(p[1] - c[1], (p[0] - c[0]) * Math.cos((c[1] * Math.PI) / 180)) * 180) / Math.PI;
   return ['Est', 'Nord-Est', 'Nord', 'Nord-Ouest', 'Ouest', 'Sud-Ouest', 'Sud', 'Sud-Est'][Math.round(((a + 360) % 360) / 45) % 8];
 };
-let nextId = features.length + 1;
+let nextId = HAITI_PROJECT_SPECS.length + 1;
 const derived = [];
 const pointFeature = (props, coords) => {
   const id = nextId++;
@@ -287,7 +316,7 @@ for (const ring of rings) {
     const label = dests.length ? dests.slice(0, 2).join(' / ') + (dests.length > 2 ? ` +${dests.length - 2}` : '') : compass(center, c.p);
     pointFeature({
       category: 'station',
-      name: `Porte ${label}`,
+      name: `${city} · Porte ${label}`,
       subtitle: `${city} Périphérique · rail & bus transfer station`,
       mode: 'Rail + bus transfer station',
       city,
@@ -349,6 +378,29 @@ for (const k of crossings) {
     river: k.river.replace(/\s*\(.*\)$/, ''),
     serves: routes.join(' · '),
   }, k.p);
+}
+// 4. Toll stations (péages) where a national rail + highway corridor passes from one department to another.
+const tolls = [];
+for (const t of trunks) {
+  const c = t.geometry.coordinates;
+  let prev = null, prevDept = null;
+  for (let i = 1; i < c.length; i++) {
+    const n = Math.max(1, Math.ceil(haversine(c[i - 1], c[i]) / 0.3));
+    for (let k = 0; k <= n; k++) {
+      const p = [c[i - 1][0] + ((c[i][0] - c[i - 1][0]) * k) / n, c[i - 1][1] + ((c[i][1] - c[i - 1][1]) * k) / n];
+      const d = deptAt(p);
+      if (prevDept && d && d !== prevDept) {
+        const at = [(prev[0] + p[0]) / 2, (prev[1] + p[1]) / 2];
+        const nearRing = rings.some((r) => distToLine(at, r.geometry.coordinates) < 3);
+        const pair = [prevDept, d].sort().join('|');
+        if (!nearRing && !tolls.some((x) => haversine(x.p, at) < 4 || (x.route === t.properties.name && x.pair === pair))) tolls.push({ p: at, from: prevDept, to: d, route: t.properties.name, pair });
+      }
+      if (d) [prev, prevDept] = [p, d];
+    }
+  }
+}
+for (const x of tolls) {
+  pointFeature({ category: 'toll', name: `Péage ${x.from} – ${x.to}`, subtitle: x.route, mode: 'Toll station', from: x.from, to: x.to, serves: x.route }, x.p);
 }
 features.push(...derived);
 

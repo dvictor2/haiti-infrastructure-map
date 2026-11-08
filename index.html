@@ -53,12 +53,15 @@
               <button class="link-btn" id="clearDept" data-i18n="h.showAll" hidden>Show all</button>
             </div>
             <div class="depts" id="depts"></div>
+            <div id="deptCities"></div>
+            <div id="deptSlot"></div>
             <div id="deptCard"></div>
           </div>
 
           <div class="block">
             <div class="block-head">
               <h2 data-i18n="h.layers">Layers</h2>
+              <button class="pill-btn" id="allLayers">All off</button>
               <label class="mini-toggle" data-i18n-title="local.title" title="Show local roads and towns even when zoomed out">
                 <input type="checkbox" id="localAlways" />
                 <span data-i18n="local.always">Local detail always</span>
@@ -89,6 +92,7 @@
           <div class="block">
             <div class="block-head">
               <h2 data-i18n="dev.themes">Themes</h2>
+              <button class="pill-btn" id="allThemes">All on</button>
               <div class="status-chips">
                 <button class="chip on" id="chipExisting" data-status="existing" data-i18n="dev.existing">Existing</button>
                 <button class="chip on" id="chipProposed" data-status="proposed" data-i18n="dev.proposed">Proposed</button>
@@ -108,6 +112,10 @@
         </section>
       </div>
     </aside>
+
+    <button id="edgeTab" class="edge-tab" data-i18n-aria="panel.hide" aria-label="Hide panel">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+    </button>
 
     <button id="openPanel" class="open-panel" hidden data-i18n-aria="panel.show" aria-label="Show panel">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>

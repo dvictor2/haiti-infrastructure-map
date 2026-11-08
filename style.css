@@ -339,3 +339,57 @@ button { cursor: pointer; }
 .badge.proposed { color: #FDE68A; border-color: rgba(253, 230, 138, 0.35); }
 .badge.existing { color: #A7F3D0; border-color: rgba(167, 243, 208, 0.35); }
 .source { color: var(--faint); font-size: 11.5px; margin: 0 0 14px; }
+
+/* ---------- Clear clickable vs. info-only ---------- */
+.stat { background: none; border: 0; border-left: 2px solid var(--line); border-radius: 0; padding: 2px 0 2px 12px; }
+.stat b { font-size: 19px; }
+.stats { gap: 12px 10px; }
+.chip { border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.07); cursor: pointer; }
+.chip:hover { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.4); }
+.pill-btn {
+  margin-left: auto; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.pill-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.block-head .mini-toggle { margin-left: 4px; }
+
+/* ---------- Department layout ---------- */
+.depts.compact { gap: 4px; }
+.depts.compact .chip { padding: 3px 8px; font-size: 11.5px; }
+.depts.compact .chip:not(.on) { opacity: 0.75; }
+.city-chips .chip { font-size: 11.5px; }
+
+/* ---------- Edge tab to hide / show the panel (desktop) ---------- */
+.edge-tab {
+  position: absolute; z-index: 6; top: 50%; left: calc(12px + var(--panel-w) - 1px); transform: translateY(-50%);
+  width: 24px; height: 64px; display: grid; place-items: center; padding: 0;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-left: 0; border-radius: 0 12px 12px 0;
+  box-shadow: 6px 0 18px rgba(0, 0, 0, 0.35); cursor: pointer; transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s;
+}
+.edge-tab:hover { background: #1b2330; }
+.edge-tab svg { transition: transform 0.2s; }
+.edge-tab.collapsed { left: 0; border-left: 1px solid var(--line); }
+.edge-tab.collapsed svg { transform: rotate(180deg); }
+@media (min-width: 761px) {
+  #collapseBtn { display: none; }
+}
+@media (max-width: 760px) {
+  .edge-tab { display: none; }
+}
+/* Details shown inside the department block keep their normal title style. */
+.block .detail h2 { text-transform: none; letter-spacing: -0.01em; color: var(--text); font-size: 20px; font-weight: 700; }
+.block .detail { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* ---------- Engineering & city cards ---------- */
+.eng { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 14px; }
+.eng-spec { margin: 0 0 10px; font-size: 12.5px; color: var(--text); line-height: 1.45; }
+.eng-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; margin: 10px 0 6px; }
+.eng-tiles.three { grid-template-columns: repeat(3, 1fr); margin-top: 14px; }
+.eng-tiles > div { border-left: 2px solid var(--line); padding-left: 10px; min-width: 0; }
+.eng-tiles b { display: block; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.eng-tiles .cost b { color: #FDE68A; }
+.eng-tiles span { color: var(--muted); font-size: 11.5px; }
+.eng .source { margin: 6px 0 0; }
+.glance .facts { margin-top: 10px; }
+.planned { margin: 4px 0 14px; }
+.planned .chip { border-width: 1.5px; }

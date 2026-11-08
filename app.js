@@ -20,6 +20,7 @@ const CATS = {
   station: { color: '#E9D5FF', swatch: 'square' },
   terminal: { color: '#7DD3FC', swatch: 'square' },
   rivercross: { color: '#67E8F9', swatch: 'square' },
+  toll: { color: '#FDE047', swatch: 'square' },
   water: { color: '#22D3EE', swatch: 'line' },
   border: { color: '#F43F5E', swatch: 'dash' },
   city: { color: '#FFFFFF', swatch: 'dot' },
@@ -35,7 +36,7 @@ const MODE_KEY = {
   'Rail + highway': 'mode.rail', 'Bridge + island road': 'mode.bridgeIsland', 'Fixed bridge': 'mode.bridge',
   'Express Ro-Ro ferry': 'mode.ferry', 'Ring highway + rail gates': 'mode.ringNat', 'Municipal bypass road': 'mode.ringLocal',
   'Urban arterial / BRT': 'mode.urban', 'Regional road': 'mode.feeder', 'Rail + bus transfer station': 'mode.station',
-  'Ferry terminal': 'mode.terminal', 'River bridge': 'mode.river',
+  'Ferry terminal': 'mode.terminal', 'River bridge': 'mode.river', 'Toll station': 'mode.toll',
 };
 const tunnelName = (s) => s.replace(/\s*base tunnels?$/i, '');
 const modeText = (p) => (p.mode ? t(MODE_KEY[p.mode] ?? p.mode) : null);
@@ -50,7 +51,8 @@ function displaySub(p) {
   if (p.category === 'terminal') return `${p.serves} · ${catHint('ferry')}`;
   return p.subtitle;
 }
-const INFRA = ['station', 'terminal', 'rivercross'];
+const INFRA = ['station', 'toll', 'terminal', 'rivercross'];
+const ESSENTIAL = ['city', 'border']; // these stay on with All off
 const RAIL_MODE = 'Rail + highway';
 const CAT_KEYS = Object.keys(CATS);
 const ROAD_CATS = CAT_KEYS.filter((k) => CATS[k].road);
@@ -148,7 +150,7 @@ const state = {
   rail: true,
   tab: 'plan',
   devThemes: new Set(),
-  devStatus: new Set(['existing', 'proposed']),
+  devStatus: new Set(['proposed']), // Existing starts off: open data can mislead (e.g. water kiosks)
   pop: false,
 };
 let plan, depts, byId;
@@ -308,6 +310,11 @@ function applyFilters() {
     if (L.local) map.setLayerZoomRange(L.id, state.localAlways ? 0 : L.minzoom, 24);
   }
   map.setFilter('dept-focus', ['==', ['get', 'name'], state.dept ?? '']);
+  map.setFilter('dept-tint', ['==', ['get', 'name'], state.dept ?? '']);
+  map.setLayoutProperty('rivers-osm', 'visibility', state.hidden.has('water') ? 'none' : 'visible');
+  if (map.getLayer('rivers-labels')) map.setLayoutProperty('rivers-labels', 'visibility', state.hidden.has('water') ? 'none' : 'visible');
+  const sel = state.dept && depts.features.find((f) => f.properties.name === state.dept);
+  map.getSource('dept-mask').setData({ type: 'FeatureCollection', features: sel ? [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]], ...sel.geometry.coordinates.map((poly) => poly[0])] } }] : [] });
   map.setLayoutProperty('rail-marks', 'visibility', state.rail ? 'visible' : 'none');
 }
 
@@ -315,10 +322,11 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 const getJSON = (u) => fetch(u).then((r) => r.json());
-const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json')]);
+const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson')]);
+let rivers;
 
 map.on('load', async () => {
-  [plan, depts, dev, popData, stats] = await dataReady;
+  [plan, depts, dev, popData, stats, rivers] = await dataReady;
   for (const f of dev.features) {
     f._bbox = bboxOf(flatCoords(f.geometry));
     devById.set(f.properties.id, f);
@@ -338,6 +346,12 @@ map.on('load', async () => {
     data: { type: 'FeatureCollection', features: depts.features.filter((f) => f.properties.label).map((f) => ({ type: 'Feature', properties: { name: f.properties.name }, geometry: { type: 'Point', coordinates: f.properties.label } })) },
   });
 
+  // Selected-department spotlight: everything outside is darkened, the department gets a light tint.
+  map.addSource('dept-mask', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'dept-mask', type: 'fill', source: 'dept-mask', paint: { 'fill-color': '#000000', 'fill-opacity': 0.5 } });
+  map.addLayer({ id: 'dept-tint', type: 'fill', source: 'depts', filter: ['==', ['get', 'name'], ''], paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.06 } });
+  map.addSource('rivers', { type: 'geojson', data: rivers });
+  map.addLayer({ id: 'rivers-osm', type: 'line', source: 'rivers', minzoom: 6.5, layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#22D3EE', 'line-opacity': 0.55, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 12, 2] } });
   map.addLayer({ id: 'dept-line', type: 'line', source: 'depts', paint: { 'line-color': '#ffffff', 'line-opacity': 0.32, 'line-width': 1, 'line-dasharray': [3, 2] } });
   map.addLayer({ id: 'dept-focus', type: 'line', source: 'depts', filter: ['==', ['get', 'name'], ''], paint: { 'line-color': '#ffffff', 'line-width': 2.5, 'line-opacity': 0.9 } });
 
@@ -361,7 +375,8 @@ map.on('load', async () => {
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
   }
 
-  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 8.6, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
+  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
+  map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } });
   if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: 1.5 });
   applyFilters();
   applyDevFilters();
@@ -470,6 +485,7 @@ function toggleBase() {
 }
 function resetView() {
   stopFly();
+  closeSelection.saved = null;
   clearSelection();
   setDept(null, { move: false });
   map.fitBounds(HAITI_BOUNDS, { padding: pad(), pitch: state.terrain ? 38 : 0, bearing: 0, duration: 1400 });
@@ -531,7 +547,7 @@ function wireMap() {
   map.on('click', (e) => {
     const id = pickAt(e.point);
     if (id) select(id, { move: true, fromMap: true });
-    else if (state.selected) clearSelection();
+    else if (state.selected) closeSelection();
   });
   // Any user gesture cancels a fly-along.
   for (const ev of ['mousedown', 'touchstart', 'wheel']) map.getCanvasContainer().addEventListener(ev, () => flying && stopFly(), { passive: true });
@@ -566,21 +582,62 @@ function setHashParam(key, val) {
   history.replaceState(history.state, '', `${location.pathname}${location.search}#${params.join('&')}`);
 }
 
-function fitFeature(f, opts = {}) {
-  if (f.geometry.type === 'Point') {
-    map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), f.properties.tier === 'local' ? 12.5 : 11), pitch: state.terrain ? 50 : 0, padding: pad(), duration: 1400, essential: true, ...opts });
-  } else {
-    const b = f._bbox;
-    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: pad(), maxZoom: 13.5, pitch: state.terrain ? 45 : 0, duration: 1400, essential: true, ...opts });
+// Camera moves: each tap moves only as much as it needs to, at one steady speed.
+const MOVE = { duration: 1200, essential: true };
+const NO_PAD = { top: 0, bottom: 0, left: 0, right: 0 };
+function nearestPointOn(coords, p) {
+  let best = coords[0], bd = Infinity;
+  const sx = Math.cos(rad(p[1]));
+  for (let i = 1; i < coords.length; i++) {
+    const a = coords[i - 1], b = coords[i];
+    const ax = (a[0] - p[0]) * sx, ay = a[1] - p[1], bx = (b[0] - p[0]) * sx, by = b[1] - p[1];
+    const dx = bx - ax, dy = by - ay;
+    const t = clamp(-(ax * dx + ay * dy) / (dx * dx + dy * dy || 1e-12), 0, 1);
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < bd) [bd, best] = [d, [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]];
   }
+  return best;
+}
+// opts.whole: frame the entire feature (the "Zoom to" button). Otherwise, if framing it would pull the
+// camera far out, ease out at most ~1 zoom level and centre on the part of the feature nearest the view.
+function fitFeature(f, opts = {}) {
+  const { whole, ...rest } = opts;
+  const pitch = state.terrain ? 45 : 0;
+  if (f.geometry.type === 'Point') {
+    const target = rest.zoom ?? (f.properties.tier === 'local' ? 12.5 : 11.5);
+    map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), target), pitch, padding: pad(), ...MOVE, ...rest, zoom: Math.max(map.getZoom(), target) });
+    return;
+  }
+  const b = f._bbox;
+  const bounds = [[b[0], b[1]], [b[2], b[3]]];
+  const cam = map.cameraForBounds(bounds, { padding: pad(), maxZoom: 13.5 });
+  const cur = map.getZoom();
+  if (!whole && cam && cam.zoom < cur - 1) {
+    const coords = flatCoords(f.geometry);
+    const c = map.getCenter();
+    map.easeTo({ center: nearestPointOn(coords.length > 1 ? coords : [coords[0], coords[0]], [c.lng, c.lat]), zoom: cur - 1, pitch, padding: pad(), ...MOVE, ...rest });
+    return;
+  }
+  map.fitBounds(bounds, { padding: pad(), maxZoom: 13.5, pitch, ...MOVE, ...rest });
 }
 
+const saveView = () => ({ center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), padding: map.getPadding() });
 function select(id, { move = true } = {}) {
+  if (move && state.selected == null && !closeSelection.saved) closeSelection.saved = saveView();
   if (typeof id === 'string' && devById.has(id)) return selectDev(id, { move });
   const f = byId.get(id);
   if (!f) return;
   stopFly();
   clearDevSelection();
+  // A city or town picked anywhere (map, search) opens its department, so the panel always reads
+  // departments → cities → details. The view to return to is the one from before this tap.
+  if (['city', 'town', 'station'].includes(f.properties.category) && f.properties.dept && state.dept !== f.properties.dept) {
+    const back = closeSelection.saved ?? saveView();
+    if (state.tab !== 'plan') setTab('plan');
+    setDept(f.properties.dept, { move: false });
+    setDept.saved = back;
+    closeSelection.saved = back;
+  }
   state.selected = id;
   const isPt = f.geometry.type === 'Point';
   for (const l of ['sel-glow', 'sel-line', 'sel-dash']) map.setFilter(l, isPt ? ['==', ['get', 'id'], -1] : ['all', ['==', ['get', 'id'], id], ['!=', ['geometry-type'], 'Point']]);
@@ -597,9 +654,18 @@ function select(id, { move = true } = {}) {
   $('#results').hidden = true;
   renderDetail(f);
   setTab(state.tab);
+  placeDetail();
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
   $('#panelBody').scrollTop = 0;
   if (move) requestAnimationFrame(() => fitFeature(f));
+}
+
+// Closing (✕, Escape, tapping empty map) returns the camera to where it was before the first selection.
+function closeSelection() {
+  const v = closeSelection.saved;
+  closeSelection.saved = null;
+  clearSelection();
+  if (v) map.flyTo({ ...MOVE, ...v });
 }
 
 function clearSelection() {
@@ -610,6 +676,20 @@ function clearSelection() {
   $('#detail').hidden = true;
   $('#detail').innerHTML = '';
   if (profileMarker) profileMarker.remove();
+  placeDetail();
+}
+
+// With a department open, the panel reads top to bottom: departments → its cities → details.
+// A selected place in that department shows its details in place of the department card.
+function placeDetail() {
+  const det = $('#detail');
+  const inDept = state.dept && state.tab === 'plan' && !det.hidden;
+  if (inDept && det.parentElement !== $('#deptSlot')) $('#deptSlot').appendChild(det);
+  if (!inDept && det.parentElement !== $('#panelBody')) $('#panelBody').insertBefore(det, $('#home'));
+  $('#deptCard').hidden = !!inDept;
+  $('#stats').hidden = !!state.dept;
+  document.querySelectorAll('#deptCities .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.id) === state.selected));
+  if (inDept) $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function connections(f) {
@@ -666,6 +746,7 @@ function renderDetail(f) {
       ? `https://www.google.com/maps/dir/?api=1&origin=${g.coordinates[0][1]},${g.coordinates[0][0]}&destination=${g.coordinates.at(-1)[1]},${g.coordinates.at(-1)[0]}`
       : `https://www.google.com/maps/search/?api=1&query=${(f._bbox[1] + f._bbox[3]) / 2},${(f._bbox[0] + f._bbox[2]) / 2}`;
   const conns = connections(f);
+  const place = stats?.places[p.id] && ['city', 'town', 'station'].includes(p.category);
   const el = $('#detail');
   el.innerHTML = `
     <div class="detail-top">
@@ -675,24 +756,26 @@ function renderDetail(f) {
     <h2>${esc(displayName(p))}</h2>
     ${displaySub(p) ? `<p class="sub">${esc(displaySub(p))}</p>` : ''}
     <div class="badges">${badges.join('')}</div>
-    ${stats?.places[p.id] && ['city', 'town', 'station'].includes(p.category) ? `<p class="note">${t('dev.people', { p5: fmtPeople(stats.places[p.id].p5), p10: fmtPeople(stats.places[p.id].p10), p25: fmtPeople(stats.places[p.id].p25) })}</p>` : ''}
+    ${place ? glanceHTML(f, conns) : ''}
     ${p.derived ? `<p class="note">${t(`note.${p.category}`)}${p.serves ? `<br><b>${t('note.serves')}</b> ${esc(p.serves)}` : ''}</p>` : ''}
-    <div class="facts">${facts.slice(0, 3).map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${k}</span></div>`).join('')}</div>
+    <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k]) => `<div class="fact"><b title="${esc(v)}">${esc(v)}</b><span>${k}</span></div>`).join('')}</div>
     <div class="actions">
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
       <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
     </div>
+    ${isLineF && p.category === 'ferry' ? engineeringHTML(f, null, null) : ''}
     ${isLineF && !['border', 'ferry'].includes(p.category) ? `<div class="profile" id="profile"><div class="profile-head"><h3>${t('prof.title')}</h3><span>${esc(fmtKm(p.km))}</span></div><div class="loading">${t('prof.measuring')}</div></div>` : ''}
     ${conns.length ? `<p class="sub-head">${t(g.type === 'Point' ? 'list.within3' : 'list.connects')}</p><ul class="list">${conns.map((c) => itemHTML(c)).join('')}</ul>` : ''}
   `;
   el.hidden = false;
-  el.querySelector('#detailClose').onclick = clearSelection;
-  el.querySelector('#btnZoom').onclick = () => fitFeature(f);
+  el.querySelector('#detailClose').onclick = closeSelection;
+  el.querySelector('#btnZoom').onclick = () => fitFeature(f, { whole: true });
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
   el.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
+  el.querySelectorAll('.planned .chip').forEach((b) => (b.onclick = () => select(b.dataset.id)));
   if (isLineF && !['border', 'ferry'].includes(p.category)) renderProfile(f, token);
 }
 
@@ -805,6 +888,8 @@ async function renderProfile(f, token) {
     <p class="note" style="margin:8px 0 0">${f.properties.tunnel ? t('prof.noteTunnel', { tunnel: esc(t('tunnel.phrase', { name: tunnelName(f.properties.tunnel) })) }) : t('prof.note')}</p>
     <div class="profile-stats" id="profRead" style="margin-top:4px;min-height:16px"><span>${minE < 5 ? t('prof.nearSea') : t('prof.lowest', { m: fmtM(minE) })} · ${t('prof.descent', { m: fmtM(descent) })}</span></div>`;
 
+  box.insertAdjacentHTML('afterend', engineeringHTML(f, s, sm));
+
   // Scrub the profile to see where you are on the map.
   const svg = box.querySelector('#profSvg');
   const cursor = box.querySelector('#profCursor');
@@ -874,7 +959,7 @@ function flyAlong(f) {
     if (t < 1) flyRaf = requestAnimationFrame(step);
     else {
       stopFly();
-      fitFeature(f, { duration: 2000 });
+      fitFeature(f, { duration: 2000, whole: true });
     }
   };
   flyStart = () => {
@@ -940,6 +1025,22 @@ function buildPanel() {
 
   // Hide / show the panel (remembered on this device).
   $('#collapseBtn').onclick = () => setCollapsed(true);
+  $('#edgeTab').onclick = () => setCollapsed(!state.collapsed);
+  $('#edgeTab').title = t('panel.hide');
+  $('#allLayers').onclick = () => {
+    const optional = CAT_KEYS.filter((k) => !ESSENTIAL.includes(k));
+    const anyOn = optional.some((k) => !state.hidden.has(k)) || state.rail;
+    optional.forEach((k) => (anyOn ? state.hidden.add(k) : state.hidden.delete(k)));
+    state.rail = !anyOn;
+    applyFilters();
+    renderLayers();
+  };
+  $('#allThemes').onclick = () => {
+    if (state.devThemes.size) state.devThemes.clear();
+    else Object.keys(DEV_THEMES).forEach((k) => state.devThemes.add(k));
+    applyDevFilters();
+    renderDevPanel();
+  };
   $('#openPanel').onclick = () => setCollapsed(false);
   try {
     if (localStorage.getItem('panelCollapsed') === '1') setCollapsed(true);
@@ -987,7 +1088,7 @@ function buildPanel() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.activeElement === document.body) {
       stopFly();
-      clearSelection();
+      closeSelection();
     }
   });
 }
@@ -996,9 +1097,10 @@ function setCollapsed(on) {
   state.collapsed = on;
   $('#panel').classList.toggle('collapsed', on);
   $('#panel').setAttribute('aria-hidden', on);
-  $('#openPanel').hidden = !on;
-  if (!on) $('#collapseBtn').focus({ preventScroll: true });
-  else $('#openPanel').focus({ preventScroll: true });
+  $('#openPanel').hidden = !on || !PHONE.matches; // on desktop the edge tab reopens the panel
+  $('#edgeTab').classList.toggle('collapsed', on);
+  $('#edgeTab').setAttribute('aria-label', t(on ? 'panel.show' : 'panel.hide'));
+  $('#edgeTab').title = t(on ? 'panel.show' : 'panel.hide');
   try {
     localStorage.setItem('panelCollapsed', on ? '1' : '0');
   } catch {
@@ -1033,6 +1135,8 @@ function renderStats() {
 
 function renderLayers() {
   const tot = catTotals(plan.features);
+  const anyOn = CAT_KEYS.filter((k) => !ESSENTIAL.includes(k)).some((k) => !state.hidden.has(k)) || state.rail;
+  $('#allLayers').textContent = t(anyOn ? 'layers.allOff' : 'layers.allOn');
   $('#layers').innerHTML = CAT_KEYS.map((k) => {
     const c = CATS[k];
     const sw = { line: '<i></i>', rail: '<i class="rail"></i>', dash: '<i class="dash"></i>', thin: '<i class="thin"></i>', dot: '<i class="dot"></i>', ring: '<i class="ring"></i>', square: '<i class="square"></i>' }[c.swatch];
@@ -1060,19 +1164,43 @@ function renderLayers() {
 }
 
 function setDept(name, { move = true } = {}) {
+  // Details of something outside the newly chosen department would sit in the wrong place.
+  const cur = state.selected != null && (byId.get(state.selected) ?? devById.get(state.selected));
+  if (name && cur && cur.properties.dept !== name) clearSelection();
+  // Remember the view before the first department is opened, and return to it when the department is closed.
+  const prevDept = state.dept;
+  if (name && !prevDept) setDept.saved = closeSelection.saved ?? saveView();
+  if (name && !prevDept) closeSelection.saved = null;
+  // Closing the department also closes a city or route opened inside it.
+  if (!name && prevDept && state.selected != null) {
+    closeSelection.saved = null;
+    clearSelection();
+  }
+  if (!name && prevDept && move && setDept.saved) map.flyTo({ ...MOVE, ...setDept.saved });
+  if (!name) setDept.saved = null;
   state.dept = name;
   applyFilters();
   $('#depts').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.d === name));
+  $('#depts').classList.toggle('compact', !!name);
   $('#clearDept').hidden = !name;
   const card = $('#deptCard');
   if (!name) {
     card.innerHTML = '';
+    $('#deptCities').innerHTML = '';
+    placeDetail();
     return;
   }
   const feats = plan.features.filter((f) => f.properties.dept === name);
   const tt = catTotals(feats);
   const roadKm = ROAD_CATS.reduce((s, k) => s + tt[k].km, 0);
   const towns = tt.city.count + tt.town.count;
+  // Main cities and towns of the department, largest first.
+  const seen = new Set();
+  const cities = feats
+    .filter((f) => ['city', 'town'].includes(f.properties.category))
+    .sort((a, b) => (stats?.places[b.properties.id]?.p5 ?? 0) - (stats?.places[a.properties.id]?.p5 ?? 0))
+    .filter((f) => { const k = norm(f.properties.name.replace(/\s*\(.*\)$/, '')); return seen.has(k) ? false : seen.add(k); })
+    .slice(0, 12);
   const routes = feats.filter((f) => ROAD_CATS.includes(f.properties.category) && f.properties.tier === 'national').sort((a, b) => b.properties.km - a.properties.km).slice(0, 8);
   card.innerHTML = `<div class="dept-card">
     <h3>${esc(name)}</h3>
@@ -1081,13 +1209,19 @@ function setDept(name, { move = true } = {}) {
     <div class="legend-row">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color}"><i></i>${catLabel(k)} ${fmtKm(tt[k].km)}</span>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
   </div>`;
+  $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
+  $('#deptCities').querySelectorAll('.chip').forEach((b) => (b.onclick = () => (state.selected === Number(b.dataset.id) ? closeSelection() : select(Number(b.dataset.id)))));
   card.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
+  placeDetail();
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
-  card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
   if (move) {
     const d = depts.features.find((f) => f.properties.name === name);
     const b = bboxOf(d.geometry.coordinates.flat(2));
-    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: pad(), pitch: state.terrain ? 40 : 0, duration: 1300 });
+    const pd = pad();
+    const cam = map.cameraForBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { ...pd, top: 20, bottom: PHONE.matches ? pd.bottom : 20, right: 40 } });
+    // A touch closer than an exact fit: the department fills the view, its edges may crop slightly.
+    if (cam) map.flyTo({ center: cam.center, zoom: cam.zoom + 0.1, pitch: state.terrain ? 30 : 0, bearing: 0, padding: NO_PAD, ...MOVE });
   }
 }
 
@@ -1209,11 +1343,12 @@ const DEV_THEMES = {
   health: '#2DD4BF',
   resilience: '#EF4444',
   environment: '#22C55E',
+  strategic: '#94A3B8',
 };
 const devColor = ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff'];
-const MINOR_KINDS = ['hospital', 'waterpoint', 'substation', 'university'];
+const MINOR_KINDS = ['clinic', 'waterKiosk', 'waterTower', 'substation', 'university'];
 const devLabelExpr = () => ['match', ['get', 'kind'], ...DEV_KIND_KEYS.flatMap((k) => [k, ['concat', t(`kind.${k}`), ' · ', ['coalesce', ['get', 'place'], '']]]), ['coalesce', ['get', 'place'], '']];
-const DEV_KIND_KEYS = ['solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross'];
+const DEV_KIND_KEYS = ['securityPost', 'coastGuard', 'protectZone', 'defenceBase', 'researchAgri', 'seismicStation', 'solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross'];
 
 function fmtPeople(n) {
   if (n == null) return '—';
@@ -1250,8 +1385,9 @@ function addDevLayers() {
     'circle-stroke-color': ['case', proposed, '#ffffff', devColor],
     'circle-stroke-width': ['case', proposed, 2, 2],
   };
-  map.addLayer({ id: 'dev-points-minor', type: 'circle', source: 'dev', minzoom: 9.5, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]], ['!=', ['get', 'major'], true]], paint: circlePaint });
-  map.addLayer({ id: 'dev-points-main', type: 'circle', source: 'dev', filter: ['all', pt, ['!=', ['get', 'kind'], 'protectedLabel'], ['any', ['!', ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], ['==', ['get', 'major'], true]]], paint: circlePaint });
+  // Dots only appear from about department zoom, so the country view stays clean.
+  map.addLayer({ id: 'dev-points-minor', type: 'circle', source: 'dev', minzoom: 10, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], paint: circlePaint });
+  map.addLayer({ id: 'dev-points-main', type: 'circle', source: 'dev', minzoom: 8, filter: ['all', pt, ['!=', ['get', 'kind'], 'protectedLabel'], ['!', ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]]], paint: circlePaint });
   map.addLayer({ id: 'dev-sel', type: 'circle', source: 'dev', filter: ['==', ['get', 'id'], ''], paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   map.addLayer({ id: 'dev-sel-line', type: 'line', source: 'dev', filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 1.4 } });
 }
@@ -1304,6 +1440,7 @@ function renderDevPanel() {
   }
   counts.energy.proposed += 1; // the power backbone
   counts.connectivity.proposed += 1; // the fibre backbone
+  $('#allThemes').textContent = t(state.devThemes.size ? 'layers.allOff' : 'layers.allOn');
   $('#popToggle').classList.toggle('off', !state.pop);
   $('#popToggle').setAttribute('aria-checked', String(state.pop));
   document.querySelectorAll('.status-chips .chip').forEach((c) => c.classList.toggle('on', state.devStatus.has(c.dataset.status)));
@@ -1361,6 +1498,7 @@ function devWhy(p) {
   if (p.kind === 'waterPlant' && p.river && p.river !== 'canal') v.river = t('why.waterRiver', { river: p.river });
   if (p.kind === 'sewagePlant' && p.coast) v.coast = t('why.sewageCoast');
   if (p.kind === 'techHub' && p.landing) v.landing = t('why.techLanding', { landing: p.landing });
+  if (p.kind === 'borderZone' && !p.corridor) return t('why.borderMarket', v);
   return t(`why.${p.kind}`, v);
 }
 
@@ -1383,6 +1521,12 @@ function devFacts(p) {
     healthGap: [[fmtPeople(p.people), 'fact.people'], [km(p.km), 'fact.toHospital']],
     faultCross: [[p.fault ?? '—', 'fact.fault']],
     floodZone: [[fmtPeople(p.people), 'fact.people'], [`${p.km2} km²`, 'fact.area']],
+    borderZone: p.people ? [[fmtPeople(p.people), 'fact.people']] : [],
+    defenceBase: [[km(p.km), 'fact.distance'], [km(p.rail), 'fact.toCorridor']],
+    researchAgri: [[`${p.km2} km²`, 'fact.area']],
+    seismicStation: [[p.fault ?? '—', 'fact.fault']],
+    mineralBelt: [[`${p.km2} km²`, 'fact.area']],
+    forestZone: [[`${p.km2} km²`, 'fact.area']],
     plant: [[p.source ?? '—', 'fact.type'], ...(p.mw ? [[`${p.mw} MW`, 'fact.capacity']] : [])],
   }[p.kind] ?? [];
   const facts = F.map(([v, k]) => [v, t(k)]);
@@ -1451,7 +1595,115 @@ function renderDevDetail(f) {
     ${p.status === 'proposed' ? `<p class="source">${esc(t('dev.screening'))}</p>` : ''}
     <p class="source">${esc(t('dev.source', { src: p.status === 'proposed' ? t('src.rules') : t(`src.${p.src}`) }))}</p>`;
   el.hidden = false;
-  el.querySelector('#detailClose').onclick = clearSelection;
-  el.querySelector('#btnZoom').onclick = () => fitFeature(f, g.type === 'Point' ? { zoom: 13 } : {});
+  el.querySelector('#detailClose').onclick = closeSelection;
+  el.querySelector('#btnZoom').onclick = () => fitFeature(f, g.type === 'Point' ? { zoom: 13 } : { whole: true });
   el.querySelector('#btnShareF').onclick = () => share(devName(p));
+}
+
+// ---------------------------------------------------------------------------
+// Engineering & cost card for routes; "at a glance" card for cities
+// ---------------------------------------------------------------------------
+// Indicative unit costs in US$ million per km by section type, and design assumptions per kind of route.
+// Order-of-magnitude figures from typical international costs; not a budget.
+const ENG = {
+  rail: { spec: 'spec.rail', grade: 0.025, cost: { surface: 14, viaduct: 45, tunnel: 90 }, car: 90, train: 130, tunnels: true },
+  ringNat: { spec: 'spec.ringNat', grade: 0.05, cost: { surface: 10, viaduct: 35, tunnel: 70 }, car: 70, tunnels: true },
+  ringLocal: { spec: 'spec.ringLocal', grade: 0.07, cost: { surface: 3, viaduct: 15, mountain: 6 }, car: 50 },
+  urban: { spec: 'spec.urban', grade: 0.07, cost: { surface: 6, viaduct: 25, mountain: 10 }, car: 30 },
+  feeder: { spec: 'spec.feeder', grade: 0.08, cost: { surface: 1.5, viaduct: 12, mountain: 3.5 }, car: 50 },
+  bridge: { spec: 'spec.bridge', grade: 0.05, cost: { surface: 3, viaduct: 40 }, car: 60 },
+  ferry: { spec: 'spec.ferry' },
+};
+const ENG_COLORS = { surface: '#34D399', viaduct: '#7DD3FC', tunnel: '#F5A524', mountain: '#FB7185' };
+function engKind(p) {
+  if (p.mode === RAIL_MODE) return 'rail';
+  if (p.category === 'ring') return p.tier === 'local' ? 'ringLocal' : 'ringNat';
+  return ENG[p.category] ? p.category : null;
+}
+const fmtB = (v) => (v / 1000).toLocaleString(locale(), { maximumFractionDigits: 1 });
+const fmtRange = (a, b) => (a >= 1000 ? `$${fmtB(a)}–${fmtB(b)} B` : b >= 1000 ? `$${Math.round(a)} M–${fmtB(b)} B` : `$${Math.round(a)}–${Math.round(b)} M`);
+const fmtMoney = (m) => (m >= 1000 ? `$${(m / 1000).toLocaleString(locale(), { maximumFractionDigits: 1 })} B` : `$${Math.round(m).toLocaleString(locale())} M`);
+const fmtMin = (h) => (h >= 1 ? `${Math.floor(h)} h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}` : `${Math.max(1, Math.round(h * 60))} min`);
+
+function engineeringHTML(f, s, sm) {
+  const p = f.properties;
+  const k = engKind(p);
+  if (!k) return '';
+  const e = ENG[k];
+  const km = p.km ?? 0;
+  const parts = {};
+  if (k === 'ferry') {
+    // Two drive-on terminals plus vessels.
+    return `<div class="eng">
+      <div class="profile-head"><h3>${t('eng.title')}</h3></div>
+      <p class="eng-spec">${esc(t(e.spec))}</p>
+      <div class="eng-tiles"><div class="cost"><b>${fmtRange(25, 45)}</b><span>${t('eng.cost')}</span></div><div><b>${fmtMin(km / 30 + 0.5)}</b><span>${t('eng.crossing')}</span></div></div>
+      <p class="source">${t('eng.costNote')}</p></div>`;
+  }
+  // A grade-limited track line through the terrain: where the ground is far above it → tunnel (or a
+  // mountain section for ordinary roads); far below it or under water → viaduct / bridge; else at grade.
+  const n = sm.length;
+  const dx = n > 1 ? (s[1].d - s[0].d) * 1000 : 1000;
+  const g = e.grade * dx;
+  // Start from the terrain averaged over a few km (a line follows the land's broad shape), then
+  // limit its grade in both directions so it stays close to the ground.
+  const win = Math.max(1, Math.round((e.tunnels ? 1500 : 400) / dx));
+  const avg = sm.map((_, i) => {
+    let sum = 0, c = 0;
+    for (let j = Math.max(0, i - win); j <= Math.min(n - 1, i + win); j++) (sum += sm[j]), c++;
+    return sum / c;
+  });
+  const F = avg.slice(), Bk = avg.slice();
+  for (let i = 1; i < n; i++) F[i] = clamp(avg[i], F[i - 1] - g, F[i - 1] + g);
+  for (let i = n - 2; i >= 0; i--) Bk[i] = clamp(avg[i], Bk[i + 1] - g, Bk[i + 1] + g);
+  for (let i = 0; i < n; i++) {
+    const diff = sm[i] - (F[i] + Bk[i]) / 2;
+    // Embankments up to 25 m and cuttings up to 40 m count as at-grade construction.
+    const type = s[i].e <= 0 || diff < -25 ? 'viaduct' : diff > 40 ? (e.tunnels ? 'tunnel' : 'mountain') : 'surface';
+    parts[type] = (parts[type] ?? 0) + 1;
+  }
+  // Shares of the sampled points, applied to the route's measured length.
+  for (const key of Object.keys(parts)) parts[key] = (parts[key] / n) * km;
+  const mid = Object.entries(parts).reduce((sum, [key, len]) => sum + len * (e.cost[key] ?? e.cost.surface), 0);
+  const order = ['surface', 'mountain', 'viaduct', 'tunnel'].filter((key) => parts[key] > 0.05);
+  const times = [`<div><b>${fmtMin(km / e.car)}</b><span>${t('eng.car')}</span></div>`];
+  if (e.train) times.push(`<div><b>${fmtMin(km / e.train)}</b><span>${t('eng.train')}</span></div>`);
+  return `<div class="eng">
+    <div class="profile-head"><h3>${t('eng.title')}</h3></div>
+    <p class="eng-spec">${esc(t(e.spec))}</p>
+    <div class="bar">${order.map((key) => `<span style="--c:${ENG_COLORS[key]};width:${(parts[key] / km) * 100}%" title="${t(`eng.${key}`)}"></span>`).join('')}</div>
+    <div class="legend-row">${order.map((key) => `<span style="--c:${ENG_COLORS[key]}"><i></i>${t(`eng.${key}`)} ${fmtKm(parts[key])}</span>`).join('')}</div>
+    <div class="eng-tiles">
+      <div class="cost"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('eng.cost')}</span></div>
+      ${times.join('')}
+    </div>
+    <p class="source">${t('eng.costNote')}</p>
+  </div>`;
+}
+
+function glanceHTML(f, conns) {
+  const p = f.properties;
+  const st = stats.places[p.id];
+  const here = f.geometry.coordinates;
+  let hosp = null;
+  for (const h of dev?.features ?? []) {
+    if (h.properties.kind !== 'hospital') continue;
+    const d = haversine(here, h.geometry.coordinates);
+    if (hosp == null || d < hosp) hosp = d;
+  }
+  const key = norm(p.name.replace(/\s*\(.*\)$/, '').split(/\s*[—\/·]\s*/)[0]);
+  const planned = (dev?.features ?? []).filter((d) => d.properties.status === 'proposed' && d.geometry.type === 'Point' && d.properties.place && norm(d.properties.place).startsWith(key) && haversine(here, d.geometry.coordinates) < 20).slice(0, 8);
+  return `<div class="glance">
+    <div class="eng-tiles three">
+      <div><b>${fmtPeople(st.p5)}</b><span>${t('city.p5')}</span></div>
+      <div><b>${fmtPeople(st.p10)}</b><span>${t('city.p10')}</span></div>
+      <div><b>${fmtPeople(st.p25)}</b><span>${t('city.p25')}</span></div>
+    </div>
+    <div class="facts">
+      <div class="fact"><b>${esc(p.dept ?? '—')}</b><span>${t('fact.dept')}</span></div>
+      <div class="fact"><b>${conns.length}</b><span>${t('city.routes')}</span></div>
+      <div class="fact"><b>${hosp == null ? '—' : fmtKm(hosp)}</b><span>${t('city.hospital')}</span></div>
+    </div>
+    ${planned.length ? `<p class="sub-head">${t('city.planned')}</p><div class="depts compact planned">${planned.map((d) => `<button class="chip" data-id="${d.properties.id}" style="border-color:${DEV_THEMES[d.properties.theme]}">${esc(t(`kind.${d.properties.kind}`))}</button>`).join('')}</div>` : ''}
+  </div>`;
 }
