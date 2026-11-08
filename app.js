@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116d';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -402,7 +402,7 @@ map.on('load', async () => {
   map.addLayer({ id: 'sel-point', type: 'circle', source: 'plan', filter: ['==', ['get', 'id'], -1], paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   addHighlightLayers();
 
-  map.addLayer({ id: 'dept-labels', type: 'symbol', source: 'dept-labels', minzoom: 5.5, maxzoom: 9.2, layout: { 'text-field': ['upcase', ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-letter-spacing': 0.22, 'text-allow-overlap': false }, paint: { 'text-color': '#ffffff', 'text-opacity': 0.5, 'text-halo-color': '#05070a', 'text-halo-width': 1.2 } });
+  map.addLayer({ id: 'dept-labels', type: 'symbol', source: 'dept-labels', minzoom: 5.5, maxzoom: 9.2, layout: { 'text-field': ['upcase', ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-letter-spacing': 0.28, 'text-allow-overlap': false }, paint: { 'text-color': '#FCD34D', 'text-opacity': 0.85, 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } });
   for (const L of DATA_LAYERS) {
     if (L.type !== 'symbol') continue;
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
@@ -1189,7 +1189,7 @@ function buildPanel() {
   renderLayers();
 
   const names = depts.features.map((f) => f.properties.name).sort((a, b) => a.localeCompare(b));
-  $('#depts').innerHTML = names.map((n) => `<button class="chip" data-d="${esc(n)}">${esc(n)}</button>`).join('');
+  $('#depts').innerHTML = names.map((n) => `<button class="chip dept-chip" data-d="${esc(n)}">${ico('mapf')}${esc(n)}</button>`).join('');
   $('#depts').querySelectorAll('.chip').forEach((c) => (c.onclick = () => (state.dept === c.dataset.d ? closeDept() : setDept(c.dataset.d))));
   $('#clearDept').onclick = closeDept;
 
@@ -1469,7 +1469,7 @@ function setDept(name, { move = true, fromBack = false } = {}) {
     <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}">${ico(CAT_ICON[k])}${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
   </div>`;
-  $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
+  $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${ico(CAT_ICON[f.properties.category])}${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
   $('#deptCities').querySelectorAll('.chip').forEach((b) => (b.onclick = () => (state.selected === Number(b.dataset.id) ? closeSelection() : select(Number(b.dataset.id)))));
   card.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
   card.querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
@@ -2524,7 +2524,7 @@ function wireCombo(input, key) {
     items = (q ? all.filter((f) => norm(`${f.properties.name} ${f.properties.dept ?? ''}`).includes(q)) : all)
       // Names that start with what was typed come first.
       .sort((a, b) => (!norm(a.properties.name).startsWith(q)) - (!norm(b.properties.name).startsWith(q)) || a.properties.name.localeCompare(b.properties.name))
-      .slice(0, 40);
+      .slice(0, 200);
     list.innerHTML = items.length
       ? items.map((f, i) => `<li role="option" data-id="${f.properties.id}" class="${i === active ? 'on' : ''}"><span class="ico-c" style="--c:${CATS[f.properties.category].color}">${ico(CAT_ICON[f.properties.category])}</span><b>${esc(f.properties.name)}</b><small>${esc(f.properties.dept ?? '')}</small></li>`).join('')
       : `<li class="empty">${t('res.none', { q: esc(input.value) })}</li>`;
@@ -2552,17 +2552,28 @@ function wireCombo(input, key) {
       close();
     }
   });
-  // pointerdown (not click) so the choice lands before the input loses focus.
+  // Touch: the list scrolls freely and a tap (click) chooses. Mouse: keep the input focused while clicking.
+  let inList = false;
   list.addEventListener('pointerdown', (e) => {
-    const li = e.target.closest('li[data-id]');
-    if (!li) return;
-    e.preventDefault();
-    choose(Number(li.dataset.id));
+    inList = true;
+    if (e.pointerType === 'mouse') e.preventDefault();
   });
-  input.addEventListener('blur', () => setTimeout(() => {
+  list.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-id]');
+    inList = false;
+    if (li) choose(Number(li.dataset.id));
+  });
+  const dismiss = () => {
     input.value = label(state.trip[key]);
     close();
-  }, 150));
+  };
+  // Leaving the field closes the list, unless the finger is on the list (scrolling it, or about to tap).
+  input.addEventListener('blur', () => setTimeout(() => !inList && dismiss(), 150));
+  document.addEventListener('pointerdown', (e) => {
+    if (list.hidden || e.target === input || list.contains(e.target)) return;
+    inList = false;
+    dismiss();
+  });
 }
 function wireTrip(box, key, move) {
   const from = box.querySelector('#tripFrom'), to = box.querySelector('#tripTo');

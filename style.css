@@ -716,3 +716,12 @@ body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
 
 .trip-form .combo { display: grid; gap: 4px; min-width: 0; }
 .trip-form .combo > span { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+
+.combo-list { touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+/* Departments vs cities: departments are bold gold-tinted chips with a map icon; cities stay light with their icon. */
+.chip.dept-chip { font-weight: 700; color: #FDE68A; border-color: rgba(252, 211, 77, 0.45); background: rgba(252, 211, 77, 0.08); }
+.chip.dept-chip:hover { background: rgba(252, 211, 77, 0.16); border-color: rgba(252, 211, 77, 0.7); }
+.chip.dept-chip.on { background: #FCD34D; color: #1c1917; border-color: #FCD34D; }
+.chip .ico { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; opacity: 0.85; }
+.city-chips .chip { font-weight: 500; }
