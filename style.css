@@ -280,7 +280,7 @@ button { cursor: pointer; }
     transition: height 0.25s ease;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .panel[data-state='peek'] { height: calc(152px + env(safe-area-inset-bottom)); }
+  .panel[data-state='peek'] { height: calc(176px + env(safe-area-inset-bottom)); }
   .panel[data-state='full'] { height: 88vh; height: 88dvh; }
   .panel[data-state='tall'] { height: 75vh; height: 75dvh; }
   .sheet-handle {
@@ -725,3 +725,24 @@ body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
 .chip.dept-chip.on { background: #FCD34D; color: #1c1917; border-color: #FCD34D; }
 .chip .ico { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; opacity: 0.85; }
 .city-chips .chip { font-weight: 500; }
+
+/* ---------- Language row at the top of the panel ---------- */
+.lang-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 10px; padding: 3px;
+  border: 1px solid var(--line); border-radius: 11px; background: rgba(255, 255, 255, 0.04);
+}
+.lang-row > svg { display: none; }
+.lang-row button {
+  flex: 1 0 auto; border: 0; background: none; color: var(--muted); border-radius: 8px;
+  padding: 6px 4px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+.lang-row button:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+.lang-row button[aria-checked='true'] { background: var(--accent); color: #05070a; }
+.lang-row.nudge { animation: lang-nudge 1.4s ease-in-out 3; }
+@keyframes lang-nudge {
+  0%, 100% { border-color: var(--line); box-shadow: none; }
+  50% { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.25); }
+}
+@media (max-width: 760px) {
+  .lang-row button { font-size: 13px; padding: 8px 3px; }
+}

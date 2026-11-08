@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116d';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116e';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -564,6 +564,20 @@ class LangControl {
   onRemove() {}
 }
 map.addControl(new LangControl(), 'top-right');
+// The same choice, always in view at the top of the panel: every language written in its own words, so a
+// visitor spots theirs at a glance (the small globe button on the map was easy to miss).
+{
+  const row = $('#langRow');
+  row.innerHTML = LANGS.map((l) => `<button type="button" role="radio" data-lang="${l.code}" lang="${l.code}">${l.code === 'ht' ? 'Kreyòl' : l.label}</button>`).join('');
+  row.querySelectorAll('[data-lang]').forEach((b) => (b.onclick = () => b.dataset.lang !== getLang() && changeLang(b.dataset.lang)));
+  // First visit (nothing chosen yet): a short glow so people notice they can switch.
+  let chosen = null;
+  try { chosen = localStorage.getItem('langChosen'); } catch { /* storage unavailable */ }
+  if (!chosen && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    row.classList.add('nudge');
+    setTimeout(() => row.classList.remove('nudge'), 4200);
+  }
+}
 // Compass only (tap to face north / flatten the tilt): pinch, the mouse wheel and the zoom button cover zooming.
 map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), 'top-right');
 map.addControl(new ButtonsControl(), 'top-right');
@@ -606,7 +620,7 @@ function pad() {
   if (PHONE.matches) {
     // Use the sheet's target height (it may still be animating).
     const st = $('#panel').dataset.state;
-    const h = st === 'peek' ? 152 : window.innerHeight * (st === 'tall' ? 0.75 : 0.52);
+    const h = st === 'peek' ? 176 : window.innerHeight * (st === 'tall' ? 0.75 : 0.52);
     return { top: 60, left: 24, right: 64, bottom: h + 16 };
   }
   return { top: 60, bottom: 60, left: $('#panel').getBoundingClientRect().right + 40, right: 80 };
@@ -1313,7 +1327,7 @@ function buildPanel() {
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 350);
       // Snap to whichever size is closest to where the finger let go: hidden, small, middle or full.
-      const snaps = [['hidden', 40], ['peek', 152], ['half', vh * 0.52], ['tall', vh * 0.75], ['full', vh]];
+      const snaps = [['hidden', 40], ['peek', 176], ['half', vh * 0.52], ['tall', vh * 0.75], ['full', vh]];
       const [name] = snaps.reduce((a, b) => (Math.abs(b[1] - released) < Math.abs(a[1] - released) ? b : a));
       if (name === 'hidden') {
         setSheet('peek');
@@ -1558,7 +1572,7 @@ function applyControlText() {
   set('#btnLang', 'ctl.lang');
   updateZoomToggle();
   if ($('#langCode')) $('#langCode').textContent = getLang().toUpperCase();
-  document.querySelectorAll('#langMenu [data-lang]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.lang === getLang())));
+  document.querySelectorAll('#langMenu [data-lang], #langRow [data-lang]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.lang === getLang())));
 }
 
 function applyStaticText() {
