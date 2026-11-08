@@ -433,3 +433,29 @@ button { cursor: pointer; }
   .lang-menu button { font-size: 15px; }
   .tooltip { font-size: 14px; }
 }
+
+/* ---------- Phones: a further size step ---------- */
+@media (max-width: 760px) {
+  .panel { font-size: 17px; }
+  .brand h1 { font-size: 21px; }
+  .brand p { font-size: 15px; }
+  .tabs button { font-size: 16px; padding: 10px 8px; }
+  .block h2, .sub-head, .profile-head h3 { font-size: 14px; }
+  .layer-name { font-size: 17px; }
+  .layer-name small, .layer-meta, .item .t small, .item .k, .legend-row, .stat span, .fact span,
+  .eng-tiles span, .profile-stats, .source, .credits, .badge, .results-head { font-size: 14.5px; }
+  .note, .eng-spec, .dept-card p, .detail .sub { font-size: 15.5px; }
+  .item .t b { font-size: 17px; }
+  .chip, .depts.compact .chip, .city-chips .chip, .status-chips .chip, .pill-btn, .mini-toggle { font-size: 15px; }
+  .depts.compact .chip { padding: 6px 11px; }
+  .detail h2 { font-size: 24px; }
+  .dept-card h3 { font-size: 20px; }
+  .fact b { font-size: 17px; }
+  .eng-tiles b { font-size: 20px; }
+  .stat b { font-size: 23px; }
+  .pill { font-size: 14px; }
+  .btn { font-size: 16px; padding: 10px 14px; }
+  .search input { font-size: 17px; }
+  .open-panel, .map-btn { font-size: 16px; }
+  .lang-menu button { font-size: 16.5px; }
+}

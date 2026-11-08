@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261108b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261108c';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -378,6 +378,15 @@ map.on('load', async () => {
   map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
   map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } });
   if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: 1.5 });
+  // Bigger map labels on phones.
+  if (PHONE.matches) {
+    for (const layer of map.getStyle().layers) {
+      if (layer.type !== 'symbol') continue;
+      const size = map.getLayoutProperty(layer.id, 'text-size');
+      if (typeof size === 'number') map.setLayoutProperty(layer.id, 'text-size', size * 1.25);
+      else if (Array.isArray(size) && size[0] === 'interpolate') map.setLayoutProperty(layer.id, 'text-size', size.map((v, i) => (i > 2 && i % 2 === 0 && typeof v === 'number' ? v * 1.25 : v)));
+    }
+  }
   applyFilters();
   applyDevFilters();
   buildPanel();
