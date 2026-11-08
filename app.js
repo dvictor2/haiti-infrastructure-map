@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116a';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116b';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -2487,27 +2487,91 @@ function sliceLine(f, a, b) {
 }
 
 function tripHTML() {
-  const places = tripPlaces();
-  const byDept = {};
-  for (const f of places) (byDept[f.properties.dept ?? '—'] ??= []).push(f);
-  const opts = (sel) => `<option value="">${t('trip.choose')}</option>${Object.keys(byDept).sort().map((d) => `<optgroup label="${esc(d)}">${byDept[d].map((f) => `<option value="${f.properties.id}" ${f.properties.id === sel ? 'selected' : ''}>${esc(f.properties.name)}</option>`).join('')}</optgroup>`).join('')}`;
+  const name = (id) => (id ? esc(byId.get(id)?.properties.name ?? '') : '');
+  const field = (id, label, val) => `<div class="combo"><span>${label}</span>
+      <input id="${id}" type="text" inputmode="search" autocomplete="off" spellcheck="false" placeholder="${t('trip.choose')}" value="${name(val)}" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="${id}List">
+      <ul class="combo-list" id="${id}List" role="listbox" hidden></ul></div>`;
   return `<h2>${t('trip.title')}</h2>
     <p class="sub">${t('trip.sub')}</p>
     <div class="trip-form">
-      <label><span>${t('trip.from')}</span><select id="tripFrom">${opts(state.trip.from)}</select></label>
+      ${field('tripFrom', t('trip.from'), state.trip.from)}
       <button class="icon-btn" id="tripSwap" title="${t('trip.swap')}" aria-label="${t('trip.swap')}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
-      <label><span>${t('trip.to')}</span><select id="tripTo">${opts(state.trip.to)}</select></label>
+      ${field('tripTo', t('trip.to'), state.trip.to)}
     </div>
     <div id="tripOut"></div>`;
 }
+// Type-to-search town picker: matches as you type (accents and case ignored, department names too),
+// tap a suggestion or press Enter for the first one; arrow keys move through the list.
+function wireCombo(input, key) {
+  const list = input.nextElementSibling;
+  let items = [], active = -1;
+  const label = (id) => (id ? byId.get(id)?.properties.name ?? '' : '');
+  const close = () => {
+    list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    active = -1;
+  };
+  const choose = (id) => {
+    state.trip[key] = id;
+    input.value = label(id);
+    close();
+    input.blur();
+    runTrip(true);
+  };
+  const render = () => {
+    const q = norm(input.value).trim();
+    const all = tripPlaces();
+    items = (q ? all.filter((f) => norm(`${f.properties.name} ${f.properties.dept ?? ''}`).includes(q)) : all)
+      // Names that start with what was typed come first.
+      .sort((a, b) => (!norm(a.properties.name).startsWith(q)) - (!norm(b.properties.name).startsWith(q)) || a.properties.name.localeCompare(b.properties.name))
+      .slice(0, 40);
+    list.innerHTML = items.length
+      ? items.map((f, i) => `<li role="option" data-id="${f.properties.id}" class="${i === active ? 'on' : ''}"><span class="ico-c" style="--c:${CATS[f.properties.category].color}">${ico(CAT_ICON[f.properties.category])}</span><b>${esc(f.properties.name)}</b><small>${esc(f.properties.dept ?? '')}</small></li>`).join('')
+      : `<li class="empty">${t('res.none', { q: esc(input.value) })}</li>`;
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  };
+  input.addEventListener('focus', () => {
+    if (PHONE.matches) setSheet('full');
+    input.select();
+    render();
+  });
+  input.addEventListener('input', () => ((active = -1), render()));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = clamp(active + (e.key === 'ArrowDown' ? 1 : -1), 0, items.length - 1);
+      render();
+      list.children[active]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const f = items[Math.max(0, active)];
+      if (f) choose(f.properties.id);
+    } else if (e.key === 'Escape') {
+      input.value = label(state.trip[key]);
+      close();
+    }
+  });
+  // pointerdown (not click) so the choice lands before the input loses focus.
+  list.addEventListener('pointerdown', (e) => {
+    const li = e.target.closest('li[data-id]');
+    if (!li) return;
+    e.preventDefault();
+    choose(Number(li.dataset.id));
+  });
+  input.addEventListener('blur', () => setTimeout(() => {
+    input.value = label(state.trip[key]);
+    close();
+  }, 150));
+}
 function wireTrip(box, key, move) {
   const from = box.querySelector('#tripFrom'), to = box.querySelector('#tripTo');
-  from.onchange = () => ((state.trip.from = Number(from.value) || null), runTrip(true));
-  to.onchange = () => ((state.trip.to = Number(to.value) || null), runTrip(true));
+  wireCombo(from, 'from');
+  wireCombo(to, 'to');
   box.querySelector('#tripSwap').onclick = () => {
     [state.trip.from, state.trip.to] = [state.trip.to, state.trip.from];
-    from.value = state.trip.from ?? '';
-    to.value = state.trip.to ?? '';
+    from.value = state.trip.from ? byId.get(state.trip.from).properties.name : '';
+    to.value = state.trip.to ? byId.get(state.trip.to).properties.name : '';
     runTrip(true);
   };
   runTrip(move);
