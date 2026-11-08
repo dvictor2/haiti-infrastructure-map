@@ -1050,40 +1050,62 @@ function buildPanel() {
 
   // Sheet handle (phone)
   $('#sheetHandle').onclick = () => {
-    if ($('#sheetHandle').dataset.dragged) return void delete $('#sheetHandle').dataset.dragged;
     const s = $('#panel').dataset.state;
-    setSheet(s === 'peek' ? 'half' : s === 'half' ? 'full' : 'peek');
+    setSheet(s === 'full' ? 'peek' : 'full');
   };
-  // Drag the sheet with a finger: it follows, then snaps to the nearest size.
+  $('#mapBtn').onclick = () => setSheet('peek');
+  // Drag the sheet by its handle, title or tabs: it follows the finger. Up → all the way to the top.
+  // Down → back to the small view, or off the screen (the "Haiti Plan" button brings it back).
+  // A tap on a tab still works; only a real drag moves the sheet.
   let drag = null;
+  let suppressClick = false;
   const sheet = $('#panel');
-  $('#sheetHandle').addEventListener('pointerdown', (e) => {
-    if (!PHONE.matches) return;
-    drag = { y: e.clientY, h: sheet.getBoundingClientRect().height, moved: false };
-    $('#sheetHandle').setPointerCapture(e.pointerId);
-    sheet.style.transition = 'none';
-  });
-  $('#sheetHandle').addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const dy = e.clientY - drag.y;
-    if (Math.abs(dy) > 4) drag.moved = true;
-    sheet.style.height = `${clamp(drag.h - dy, 120, window.innerHeight * 0.92)}px`;
-  });
-  const endDrag = () => {
-    if (!drag) return;
-    const h = sheet.getBoundingClientRect().height;
-    sheet.style.transition = '';
-    sheet.style.height = '';
-    if (drag.moved) {
-      const vh = window.innerHeight;
-      const snaps = [['peek', 152], ['half', vh * 0.52], ['full', vh * 0.88]];
-      setSheet(snaps.reduce((a, b) => (Math.abs(b[1] - h) < Math.abs(a[1] - h) ? b : a))[0]);
-      $('#sheetHandle').dataset.dragged = '1';
-    }
-    drag = null;
-  };
-  $('#sheetHandle').addEventListener('pointerup', endDrag);
-  $('#sheetHandle').addEventListener('pointercancel', endDrag);
+  const zones = [$('#sheetHandle'), document.querySelector('.brand-row'), document.querySelector('.tabs')];
+  for (const z of zones) {
+    z.addEventListener('pointerdown', (e) => {
+      if (!PHONE.matches) return;
+      suppressClick = false;
+      drag = { y: e.clientY, h: sheet.getBoundingClientRect().height, state: sheet.dataset.state, moved: false, z, id: e.pointerId };
+    });
+    z.addEventListener('pointermove', (e) => {
+      if (!drag || drag.z !== z) return;
+      const dy = e.clientY - drag.y;
+      if (!drag.moved && Math.abs(dy) > 8) {
+        drag.moved = true;
+        z.setPointerCapture(drag.id);
+        sheet.style.transition = 'none';
+      }
+      if (drag.moved) sheet.style.height = `${clamp(drag.h - dy, 40, window.innerHeight)}px`;
+    });
+    const end = (e) => {
+      if (!drag || drag.z !== z) return;
+      const { moved, state: from } = drag;
+      const dy = e.clientY - drag.y;
+      sheet.style.transition = '';
+      sheet.style.height = '';
+      drag = null;
+      if (!moved) return;
+      // Swallow only the click that ends this drag (if the browser sends one), never a later tap.
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 350);
+      if (dy < -40) setSheet('full');
+      else if (dy > 40) {
+        if (from === 'full' && dy < window.innerHeight * 0.45) setSheet('peek');
+        else {
+          setSheet('peek');
+          setCollapsed(true);
+        }
+      }
+    };
+    z.addEventListener('pointerup', end);
+    z.addEventListener('pointercancel', end);
+  }
+  sheet.addEventListener('click', (e) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.activeElement === document.body) {

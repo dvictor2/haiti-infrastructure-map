@@ -393,3 +393,16 @@ button { cursor: pointer; }
 .glance .facts { margin-top: 10px; }
 .planned { margin: 4px 0 14px; }
 .planned .chip { border-width: 1.5px; }
+
+/* ---------- Phone sheet: drag zones, full height, Map button ---------- */
+.map-btn { display: none; }
+@media (max-width: 760px) {
+  .sheet-handle, .brand-row, .tabs { touch-action: none; }
+  .panel[data-state='full'] { height: calc(100vh - 6px); height: calc(100dvh - env(safe-area-inset-top, 0px) - 6px); }
+  .panel[data-state='full'] .map-btn {
+    display: inline-flex; align-items: center; gap: 6px; flex: none;
+    border: 1px solid rgba(255, 255, 255, 0.25); background: var(--text); color: var(--bg-solid);
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+  }
+  .panel[data-state='full'] #collapseBtn { display: none; }
+}

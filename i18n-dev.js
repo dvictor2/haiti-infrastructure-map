@@ -168,6 +168,7 @@ export const DEV = {
     "city.routes": "Routes nearby",
     "city.hospital": "Nearest hospital",
     "city.planned": "Planned here",
+    "btn.map": "Map",
   },
 
   es: {
@@ -338,6 +339,7 @@ export const DEV = {
     "city.routes": "Rutas cercanas",
     "city.hospital": "Hospital más cercano",
     "city.planned": "Previsto aquí",
+    "btn.map": "Mapa",
   },
 
   pt: {
@@ -508,6 +510,7 @@ export const DEV = {
     "city.routes": "Rotas próximas",
     "city.hospital": "Hospital mais próximo",
     "city.planned": "Previsto aqui",
+    "btn.map": "Mapa",
   },
 
   fr: {
@@ -678,6 +681,7 @@ export const DEV = {
     "city.routes": "Routes proches",
     "city.hospital": "Hôpital le plus proche",
     "city.planned": "Prévu ici",
+    "btn.map": "Carte",
   },
 
   ht: {
@@ -848,5 +852,6 @@ export const DEV = {
     "city.routes": "Wout toupre",
     "city.hospital": "Lopital ki pi pre",
     "city.planned": "Sa ki planifye isit la",
+    "btn.map": "Kat",
   },
 };
