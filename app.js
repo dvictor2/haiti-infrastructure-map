@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261110a';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261112a';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -50,6 +50,7 @@ function displaySub(p) {
   if (p.category === 'station') return `${p.city} Périphérique · ${t('mode.station')}`;
   if (p.category === 'terminal') return `${p.serves} · ${catHint('ferry')}`;
   if (p.subtitle === 'DR') return t('sub.dr');
+  if (p.about) return t(`about.${p.about}.sub`);
   return p.subtitle;
 }
 const INFRA = ['station', 'toll', 'terminal', 'rivercross'];
@@ -168,6 +169,17 @@ const osmName = () => (getLang() === 'ht' ? ['coalesce', ['get', 'name:ht'], ['g
 const osmCountryName = () => ['coalesce', ['get', `name:${getLang()}`], ['get', 'name:en'], ['get', 'name']];
 const style = {
   version: 8,
+  // A round Earth when zoomed out (it flattens to a normal map as you zoom in), with sky and haze at the horizon.
+  projection: { type: 'globe' },
+  sky: {
+    'sky-color': '#0b1a2e',
+    'horizon-color': '#2b4a6b',
+    'fog-color': '#1d3349',
+    'sky-horizon-blend': 0.6,
+    'horizon-fog-blend': 0.6,
+    'fog-ground-blend': 0.85,
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
+  },
   glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
   sources: {
     satellite: {
@@ -215,7 +227,8 @@ const style = {
 };
 
 // Read before the map is created: MapLibre writes its own `v=` into the hash on start-up.
-const hadView = /(^|[#&])v=/.test(location.hash);
+// A saved whole-globe view (e.g. a reload during the opening swoop) counts as no view, so the swoop replays.
+const hadView = Number(location.hash.match(/(?:^#|&)v=([\d.]+)/)?.[1] ?? 0) >= 3;
 // Place, water, peak and airport names from OpenStreetMap vector tiles.
 // The island-wide "Hispaniola" / "Española" label is filtered out on purpose.
 function osmLabelLayers() {
@@ -245,10 +258,11 @@ function osmLabelLayers() {
 const map = new maplibregl.Map({
   container: 'map',
   style,
-  center: [-72.75, 18.95],
-  zoom: PHONE.matches ? 6.2 : 7.2,
+  // A first visit starts on the whole globe and swoops down to Haiti (see the end of the load handler).
+  center: hadView ? [-72.75, 18.95] : [-45, 12],
+  zoom: hadView ? (PHONE.matches ? 6.2 : 7.2) : PHONE.matches ? 0.6 : 1.4,
   pitch: 0,
-  minZoom: 4,
+  minZoom: 0.5,
   maxPitch: 75,
   hash: 'v',
   attributionControl: { compact: true },
@@ -268,9 +282,11 @@ const lineWidth = ['interpolate', ['linear'], ['zoom'], 6, widthAt(6), 12, width
 const widthPlus = (n6, n12 = n6) => ['interpolate', ['linear'], ['zoom'], 6, ['+', n6, widthAt(6)], 12, ['+', n12, widthAt(12)], 16, ['+', n12, ['*', 1.6, widthAt(12)]]];
 const casingWidth = widthPlus(2, 3);
 const infraLabel = () => ['match', ['get', 'category'], 'terminal', ['concat', t('name.terminal'), ['get', 'place']], 'rivercross', ['concat', t('name.river'), ['get', 'river']], ['get', 'name']];
-const isLine = ['==', ['geometry-type'], 'LineString'];
-const isPoly = ['==', ['geometry-type'], 'Polygon'];
-const isPoint = ['==', ['geometry-type'], 'Point'];
+// MapLibre 5 reports "Multi…" geometries by their own type, so each test accepts both forms.
+const geomIs = (t) => ['in', ['geometry-type'], ['literal', [t, `Multi${t}`]]];
+const isLine = geomIs('LineString');
+const isPoly = geomIs('Polygon');
+const isPoint = geomIs('Point');
 const inCats = (list) => ['in', ['get', 'category'], ['literal', list]];
 const tierIs = (t) => ['==', ['get', 'tier'], t];
 
@@ -292,9 +308,9 @@ const DATA_LAYERS = [
   { id: 'labels-lines', filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'water'])], type: 'symbol', minzoom: 8.4, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-max-angle': 30, 'symbol-spacing': 420, 'text-padding': 4 }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
   { id: 'labels-local', filter: ['all', isPoint, tierIs('local')], type: 'symbol', minzoom: 10.2, local: true, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': 11.5, 'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': '#E2E8F0', 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
   { id: 'labels-infra', filter: ['all', isPoint, inCats(INFRA)], type: 'symbol', minzoom: 10.6, layout: { 'text-field': infraLabel(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
-  { id: 'labels-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'symbol', layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10.5, 10, 13.5], 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': ['match', ['get', 'category'], 'water', '#A5F3FC', 'site', '#FED7AA', '#FFFFFF'], 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
+  { id: 'labels-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'symbol', minzoom: 4.8, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10.5, 10, 13.5], 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': ['match', ['get', 'category'], 'water', '#A5F3FC', 'site', '#FED7AA', '#FFFFFF'], 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
 ];
-const INTERACTIVE = ['dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill'];
+const INTERACTIVE = ['haz-quakes', 'dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill', 'haz-storms'];
 
 function catFilter() {
   const hidden = [...state.hidden];
@@ -365,6 +381,7 @@ map.on('load', async () => {
   }
 
   addDevLayers();
+  addHazardLayers();
 
   // Hover + selection highlights sit above lines, below labels.
   map.addLayer({ id: 'hover-line', type: 'line', source: 'plan', filter: ['==', ['get', 'id'], -1], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': 0.55, 'line-width': widthPlus(4) } });
@@ -374,7 +391,7 @@ map.on('load', async () => {
   map.addLayer({ id: 'sel-point', type: 'circle', source: 'plan', filter: ['==', ['get', 'id'], -1], paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   addHighlightLayers();
 
-  map.addLayer({ id: 'dept-labels', type: 'symbol', source: 'dept-labels', maxzoom: 9.2, layout: { 'text-field': ['upcase', ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-letter-spacing': 0.22, 'text-allow-overlap': false }, paint: { 'text-color': '#ffffff', 'text-opacity': 0.5, 'text-halo-color': '#05070a', 'text-halo-width': 1.2 } });
+  map.addLayer({ id: 'dept-labels', type: 'symbol', source: 'dept-labels', minzoom: 5.5, maxzoom: 9.2, layout: { 'text-field': ['upcase', ['get', 'name']], 'text-font': ['Noto Sans Bold'], 'text-size': 10.5, 'text-letter-spacing': 0.22, 'text-allow-overlap': false }, paint: { 'text-color': '#ffffff', 'text-opacity': 0.5, 'text-halo-color': '#05070a', 'text-halo-width': 1.2 } });
   for (const L of DATA_LAYERS) {
     if (L.type !== 'symbol') continue;
     map.addLayer({ id: L.id, type: 'symbol', source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), layout: L.layout, paint: L.paint });
@@ -409,10 +426,17 @@ map.on('load', async () => {
     select(f, { move: !hadView });
   } else if (f && byId.has(f)) select(f, { move: !hadView });
   else if (!hadView) {
-    map.jumpTo({ center: [-72.7, 19.0], zoom: PHONE.matches ? 4.6 : 5.4 });
-    map.fitBounds(HAITI_BOUNDS, { padding: PHONE.matches ? { top: 40, left: 2, right: 44, bottom: 170 } : pad(), pitch: PHONE.matches ? 0 : 38, bearing: PHONE.matches ? 0 : -4, duration: 2600, essential: true });
+    // Let the globe draw for a moment, then swoop down to Haiti.
+    const swoop = () => {
+      if (swoop.done || state.selected != null) return;
+      swoop.done = true;
+      const cam = safeCam(HAITI_BOUNDS, { padding: PHONE.matches ? { top: 40, left: 2, right: 44, bottom: 170 } : pad() });
+      if (cam) map.flyTo({ ...cam, pitch: PHONE.matches ? 0 : 38, bearing: PHONE.matches ? 0 : -4, duration: 4800, curve: 1.6, essential: true });
+    };
+    map.once('idle', () => setTimeout(swoop, 500));
+    setTimeout(swoop, 2500);
   }
-  if (!f) setTimeout(maybeShowHint, 3200);
+  if (!f) setTimeout(maybeShowHint, hadView ? 1500 : 6500);
 });
 
 // ---------------------------------------------------------------------------
@@ -431,6 +455,51 @@ const ICONS = {
   back: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>',
   route: '<svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></svg>',
 };
+
+// Small line icons that label kinds of things: routes, places, themes, hazards and the facts on cards.
+const ICO = {
+  car: '<path d="M4 16v-4l2.2-5h11.6L20 12v4"/><path d="M3 16h18M4 12h16"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/>',
+  train: '<rect x="6" y="3" width="12" height="13" rx="3"/><path d="M6 10h12M9 16l-1.5 4M15 16l1.5 4M8 19h8"/><circle cx="9" cy="13" r=".7"/><circle cx="15" cy="13" r=".7"/>',
+  bus: '<rect x="5" y="3" width="14" height="15" rx="2.5"/><path d="M5 11h14M8 21v-3M16 21v-3"/><circle cx="8.5" cy="14.5" r=".7"/><circle cx="15.5" cy="14.5" r=".7"/>',
+  road: '<path d="M8 3 4 21M16 3l4 18M12 4v3M12 11v3M12 18v2"/>',
+  ruler: '<path d="M3 17 17 3l4 4L7 21Z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  mapf: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>',
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.2"/><path d="M15.6 14.3A5 5 0 0 1 21 19"/>',
+  hospital: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.6-1-1.6-1.4-2.8-1.4-1.6 0-2.8.8-2.8 2.1 0 3 5.8 1.5 5.8 4.3 0 1.3-1.3 2.1-3 2.1-1.3 0-2.4-.5-3-1.5M12 6v1.8M12 16.3V18"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  mountain: '<path d="m2 20 7-12 4 6 2-3 7 9Z"/>',
+  tunnel: '<path d="m2 20 7-12 4 6 2-3 7 9Z"/><path d="M9 20v-3a2 2 0 0 1 4 0v3"/>',
+  bridge: '<path d="M2 8h20M4 8v12M20 8v12M2 20h20M4 8c3 5 5 6 8 6s5-1 8-6M8 12v8M16 12v8"/>',
+  ship: '<path d="M3 15h18l-2.5 5h-13Z"/><path d="M6 15V9h12v6M12 4v5M9 6h6"/>',
+  anchor: '<circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 11h8"/>',
+  ring: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>',
+  station: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
+  island: '<path d="M3 18c3-2 6-2 9 0s6 2 9 0"/><path d="M8 15c0-3 2-5 4-5s4 2 4 5"/><path d="M12 10V4l4 2-4 2"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/>',
+  flag: '<path d="M5 21V4h11l-2 4 2 4H5"/>',
+  city: '<path d="M3 21h18M5 21V8l5-3v16M10 21V10h9v11M13 13h3M13 16h3"/>',
+  town: '<path d="M4 11 12 4l8 7v9H4Z"/><path d="M10 20v-5h4v5"/>',
+  shield: '<path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7Z"/>',
+  leaf: '<path d="M5 19c0-8 6-14 15-14 0 9-6 15-14 15"/><path d="M5 19c3-4 6-6 9-7"/>',
+  pipe: '<path d="M3 7h10v6h8M3 11h6v6h12"/>',
+  briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
+  wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
+  alert: '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17v.01"/>',
+  tree: '<path d="M12 22v-6M12 2 6 10h3l-4 6h14l-4-6h3Z"/>',
+  storm: '<circle cx="12" cy="12" r="2.5"/><path d="M12 3C7 3 4 6 4 9M12 21c5 0 8-3 8-6M4.5 15c.5 4 3.5 6 7.5 6M19.5 9C19 5 16 3 12 3"/>',
+  wind: '<path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/>',
+  quake: '<path d="M2 12h4l2-5 3 10 3-12 2 7h6"/>',
+  depth: '<path d="M12 4v13M6 11l6 6 6-6M4 20h16"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  home: '<path d="M4 11 12 4l8 7v9H4Z"/>',
+};
+const ico = (name) => (ICO[name] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[name]}</svg>` : '');
+const CAT_ICON = { corridor: 'train', trunk: 'train', bridge: 'bridge', ferry: 'ship', ring: 'ring', urban: 'bus', feeder: 'road', station: 'station', terminal: 'anchor', rivercross: 'bridge', toll: 'coin', water: 'drop', border: 'flag', city: 'city', town: 'town', site: 'shield' };
+const THEME_ICON = { energy: 'bolt', water: 'drop', sanitation: 'pipe', agri: 'leaf', housing: 'home', economy: 'briefcase', connectivity: 'wifi', health: 'hospital', resilience: 'alert', environment: 'tree', strategic: 'shield' };
+const ENG_ICON = { surface: 'road', mountain: 'mountain', viaduct: 'bridge', tunnel: 'tunnel' };
 
 class ButtonsControl {
   onAdd() {
@@ -560,7 +629,13 @@ function wireMap() {
       map.setFilter('hover-line', ['==', ['get', 'id'], id ?? -1]);
     }
     map.getCanvas().style.cursor = id ? 'pointer' : '';
-    if (id && devById.has(id)) {
+    if (id && hazById.has(id)) {
+      const p = hazById.get(id).properties;
+      tip.innerHTML = p.kind === 'storm' ? `${esc(p.name || t('haz.unnamed'))} ${p.year}<small>${esc(stormCat(p.cat))}</small>` : `${esc(p.label)}<small>${esc(p.place ?? '')}</small>`;
+      tip.style.left = `${e.point.x}px`;
+      tip.style.top = `${e.point.y}px`;
+      tip.hidden = false;
+    } else if (id && devById.has(id)) {
       const p = devById.get(id).properties;
       tip.innerHTML = `${esc(devName(p))}<small>${esc(t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'))}</small>`;
       tip.style.left = `${e.point.x}px`;
@@ -646,7 +721,7 @@ function fitFeature(f, opts = {}) {
   const b = f._bbox;
   const bounds = [[b[0], b[1]], [b[2], b[3]]];
   clearPadding();
-  const cam = map.cameraForBounds(bounds, { padding: pad(), maxZoom: 13.5 });
+  const cam = safeCam(bounds, { padding: pad(), maxZoom: 13.5 });
   const cur = map.getZoom();
   if (!whole && cam && cam.zoom < cur - 1) {
     const coords = flatCoords(f.geometry);
@@ -661,6 +736,7 @@ const saveView = () => ({ center: map.getCenter(), zoom: map.getZoom(), pitch: m
 function select(id, { move = true } = {}) {
   if (tour) endTour();
   if (move && state.selected == null && !closeSelection.saved) closeSelection.saved = saveView();
+  if (typeof id === 'string' && hazById.has(id)) return selectHaz(id, { move });
   if (typeof id === 'string' && devById.has(id)) return selectDev(id, { move });
   const f = byId.get(id);
   if (!f) return;
@@ -713,13 +789,21 @@ function openedPage() {
 }
 function setFocus() {
   const page = !!state.page && !$('#page').hidden;
-  $('#panel').classList.toggle('focus', PHONE.matches && ((state.selected != null && !$('#detail').hidden) || page));
+  const focus = PHONE.matches && ((state.selected != null && !$('#detail').hidden) || page);
+  $('#panel').classList.toggle('focus', focus);
+  // Phones: an open department is a screen of its own (Back, departments, its cities, its card).
+  $('#panel').classList.toggle('deptmode', PHONE.matches && !focus && !!state.dept && state.tab === 'plan' && $('#results').hidden);
 }
 // Back steps are driven by what the new history entry says should be open.
 window.addEventListener('popstate', () => {
   const hs = history.state ?? {};
   if (!hs.sel && state.selected != null) closeSelection({ fromBack: true });
   if ((hs.page ?? null) !== state.page) renderPage(hs.page ?? null);
+  if (!hs.dept && state.dept) setDept(null, { fromBack: true });
+  if (closeDept.pending) {
+    if (hs.dept || hs.sel) return history.back();
+    closeDept.pending = false;
+  }
   if (leaveToHome.fn) {
     if (hs.sel || hs.page) return history.back();
     const fn = leaveToHome.fn;
@@ -759,6 +843,11 @@ function placeDetail() {
   if (!inDept && det.parentElement !== $('#panelBody')) $('#panelBody').insertBefore(det, $('#home'));
   $('#deptCard').hidden = !!inDept;
   $('#stats').hidden = !!state.dept;
+  // The three main actions sit under an open department (after its cities and card), else under the stats.
+  const acts = document.querySelector('.home-actions');
+  const anchor = state.dept ? $('#deptCard') : $('#stats');
+  if (acts.previousElementSibling !== anchor) anchor.after(acts);
+  acts.classList.toggle('in-dept', !!state.dept);
   document.querySelectorAll('#deptCities .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.id) === state.selected));
   if (inDept) $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
   syncPage();
@@ -793,7 +882,7 @@ function itemHTML(f, right) {
   const p = f.properties;
   const sub = [displaySub(p), p.dept].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || catOne(p.category);
   return `<li><button class="item" data-id="${p.id}" style="--c:${CATS[p.category].color}">
-      <span class="dotc"></span>
+      <span class="ico-c">${ico(CAT_ICON[p.category])}</span>
       <span class="t"><b>${esc(displayName(p))}</b><small>${esc(sub)}</small></span>
       <span class="k">${right ?? (p.km ? fmtKm(p.km) : '')}</span></button></li>`;
 }
@@ -806,13 +895,14 @@ function renderDetail(f) {
   const token = ++selectToken;
   // Each fact may do something when tapped: explain itself (info), open something (nav) or copy.
   const facts = [];
-  if (g.type === 'Point') facts.push([`${g.coordinates[1].toFixed(4)}, ${g.coordinates[0].toFixed(4)}`, t('fact.latlon'), 'copy']);
-  if (p.km) facts.push([fmtKm(p.km), t(g.type === 'Polygon' ? 'fact.perimeter' : 'fact.length')]);
-  if (p.mode) facts.push([modeText(p), t('fact.mode'), engKind(p) ? 'mode' : null]);
-  facts.push([p.dept ?? t('fact.crossBorder'), t('fact.dept'), p.dept ? 'dept' : null]);
+  if (g.type === 'Point') facts.push([`${g.coordinates[1].toFixed(4)}, ${g.coordinates[0].toFixed(4)}`, t('fact.latlon'), 'copy', 'pin']);
+  if (p.km) facts.push([fmtKm(p.km), t(g.type === 'Polygon' ? 'fact.perimeter' : 'fact.length'), null, 'ruler']);
+  if (p.mode) facts.push([modeText(p), t('fact.mode'), engKind(p) ? 'mode' : null, CAT_ICON[p.category] ?? 'road']);
+  facts.push([p.dept ?? t('fact.crossBorder'), t('fact.dept'), p.dept ? 'dept' : null, 'mapf']);
   const badges = [`<button class="badge tap info" data-act="tier">${t(p.tier === 'local' ? 'badge.local' : 'badge.national')}</button>`];
   if (p.tunnel) badges.push(`<button class="badge tunnel tap info" data-act="tunnel">${t('badge.tunnel')} · ${esc(tunnelName(p.tunnel))}</button>`);
   if (p.mode === RAIL_MODE) badges.push(`<button class="badge rail tap info" data-act="rail">${t('badge.rail')}</button>`);
+  if (p.about) badges.push(`<span class="badge proposed">${t(`about.${p.about}.badge`)}</span>`);
   const gm = g.type === 'Point'
     ? `https://www.google.com/maps/search/?api=1&query=${g.coordinates[1]},${g.coordinates[0]}`
     : isLineF
@@ -822,16 +912,14 @@ function renderDetail(f) {
   const place = stats?.places[p.id] && ['city', 'town', 'station'].includes(p.category);
   const el = $('#detail');
   el.innerHTML = `
-    <div class="detail-top">
-      <span class="pill" style="--c:${cat.color}">${esc(catOne(p.category))}</span>
-      <button class="icon-btn" id="detailClose" aria-label="${t('btn.close')}">${ICONS.close}</button>
-    </div>
+    <div class="detail-top">${backBtn()}<span class="pill" style="--c:${cat.color}">${ico(CAT_ICON[p.category])}${esc(catOne(p.category))}</span></div>
     <h2>${esc(displayName(p))}</h2>
     ${displaySub(p) ? `<p class="sub">${esc(displaySub(p))}</p>` : ''}
     <div class="badges">${badges.join('')}</div>
+    ${p.about ? `<p class="note">${t(`about.${p.about}`)}</p>` : ''}
     ${place ? glanceHTML(f, conns) : ''}
     ${p.derived ? `<p class="note">${t(`note.${p.category}`)}${p.serves ? `<br><b>${t('note.serves')}</b> ${esc(p.serves)}` : ''}</p>` : ''}
-    <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k, act]) => factHTML(v, k, act)).join('')}</div>
+    <div class="facts" ${place ? 'hidden' : ''}>${facts.slice(0, 3).map(([v, k, act, icon]) => factHTML(v, k, act, '', icon)).join('')}</div>
     <div class="actions">
       ${['city', 'town'].includes(p.category) ? `<button class="btn primary" id="btnTrip">${ICONS.route} ${t('btn.tripFrom')}</button>` : ''}
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
@@ -1067,8 +1155,8 @@ function buildPanel() {
 
   const names = depts.features.map((f) => f.properties.name).sort((a, b) => a.localeCompare(b));
   $('#depts').innerHTML = names.map((n) => `<button class="chip" data-d="${esc(n)}">${esc(n)}</button>`).join('');
-  $('#depts').querySelectorAll('.chip').forEach((c) => (c.onclick = () => setDept(state.dept === c.dataset.d ? null : c.dataset.d)));
-  $('#clearDept').onclick = () => setDept(null);
+  $('#depts').querySelectorAll('.chip').forEach((c) => (c.onclick = () => (state.dept === c.dataset.d ? closeDept() : setDept(c.dataset.d))));
+  $('#clearDept').onclick = closeDept;
 
   $('#localAlways').onchange = (e) => {
     state.localAlways = e.target.checked;
@@ -1107,6 +1195,7 @@ function buildPanel() {
     renderDevPanel();
   }));
   renderDevPanel();
+  renderHazards();
 
   // Hide / show the panel (remembered on this device).
   $('#collapseBtn').onclick = () => setCollapsed(true);
@@ -1151,7 +1240,7 @@ function buildPanel() {
   let suppressClick = false;
   const sheet = $('#panel');
   // The item's header is a drag zone too: on phones it replaces the title box while something is open.
-  const ZONES = '.sheet-handle, .brand-row, .tabs, .detail-top, #detail > h2, #page > h2';
+  const ZONES = '.sheet-handle, .brand-row, .tabs, .detail-top, #detail > h2, #page > h2, .deptmode #home .block-head, #deptBack';
   {
     const z = sheet;
     z.addEventListener('pointerdown', (e) => {
@@ -1243,11 +1332,11 @@ function renderStats() {
     m?.forEach((x) => islands.add(x));
   }
   $('#stats').innerHTML = [
-    [Math.round(railKm).toLocaleString(locale()) + ' km', t('stat.rail'), 'trunks'],
-    [rings, t('stat.rings', { n: micro }), 'rings'],
-    [tot.station.count, t('stat.stations'), 'stations'],
-    [islands.size, t('stat.islands'), 'islands'],
-  ].map(([b, s, k]) => `<button class="stat tap nav" data-coll="${k}"><b>${b}</b><span>${s}</span></button>`).join('');
+    [Math.round(railKm).toLocaleString(locale()) + ' km', t('stat.rail'), 'trunks', 'train'],
+    [rings, t('stat.rings', { n: micro }), 'rings', 'ring'],
+    [tot.station.count, t('stat.stations'), 'stations', 'station'],
+    [islands.size, t('stat.islands'), 'islands', 'island'],
+  ].map(([b, s, k, i]) => `<button class="stat tap nav" data-coll="${k}"><b>${b}</b><span>${ico(i)}${s}</span></button>`).join('');
   $('#stats').querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
 
 }
@@ -1282,7 +1371,19 @@ function renderLayers() {
   });
 }
 
-function setDept(name, { move = true } = {}) {
+// An open department is its own step in the history: Back (button or phone) closes it.
+function closeDept() {
+  if (history.state?.dept) {
+    closeDept.pending = true;
+    history.back();
+  } else setDept(null);
+}
+function setDept(name, { move = true, fromBack = false } = {}) {
+  if (name && !fromBack) {
+    const hs = history.state ?? {};
+    if (!hs.dept) history.pushState({ ...hs, dept: name }, '', location.href);
+    else if (hs.dept !== name) history.replaceState({ ...hs, dept: name }, '', location.href);
+  }
   // Details of something outside the newly chosen department would sit in the wrong place.
   const cur = state.selected != null && (byId.get(state.selected) ?? devById.get(state.selected));
   if (name && cur && cur.properties.dept !== name) clearSelection();
@@ -1301,7 +1402,7 @@ function setDept(name, { move = true } = {}) {
   applyFilters();
   $('#depts').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.d === name));
   $('#depts').classList.toggle('compact', !!name);
-  $('#clearDept').hidden = !name;
+  $('#deptBack').hidden = !name;
   const card = $('#deptCard');
   if (!name) {
     card.innerHTML = '';
@@ -1325,7 +1426,7 @@ function setDept(name, { move = true } = {}) {
     <h3>${esc(name)}</h3>
     <p>${stats?.depts[name] ? `<b>${t('dev.deptPeople', { n: fmtPeople(stats.depts[name]) })}</b> · ` : ''}${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
     <div class="bar">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color};width:${(tt[k].km / roadKm) * 100}%" title="${catLabel(k)}: ${fmtKm(tt[k].km)}"></span>`).join('')}</div>
-    <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}"><i></i>${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
+    <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}">${ico(CAT_ICON[k])}${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
     ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
   </div>`;
   $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
@@ -1334,12 +1435,13 @@ function setDept(name, { move = true } = {}) {
   card.querySelectorAll('[data-coll]').forEach((b) => (b.onclick = () => openPage(`coll:${b.dataset.coll}`)));
   placeDetail();
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
-  $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (PHONE.matches) $('#panelBody').scrollTop = 0;
+  else $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
   if (move) {
     const d = depts.features.find((f) => f.properties.name === name);
     const b = bboxOf(d.geometry.coordinates.flat(2));
     const pd = pad();
-    const cam = map.cameraForBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { ...pd, top: 20, bottom: PHONE.matches ? pd.bottom : 20, right: 40 } });
+    const cam = safeCam([[b[0], b[1]], [b[2], b[3]]], { padding: { ...pd, top: 20, bottom: PHONE.matches ? pd.bottom : 20, right: 40 } });
     // A touch closer than an exact fit: the department fills the view, its edges may crop slightly.
     if (cam) map.flyTo({ center: cam.center, zoom: cam.zoom + 0.1, pitch: state.terrain ? 30 : 0, bearing: 0, padding: NO_PAD, ...MOVE });
   }
@@ -1429,7 +1531,7 @@ function applyStaticText() {
 }
 
 function changeLang(code) {
-  setLang(code);
+  setLang(code, { remember: true });
   applyStaticText();
   const label = LANGS.find((l) => l.code === code)?.label;
   if (!plan) return;
@@ -1442,7 +1544,9 @@ function changeLang(code) {
   renderDevPanel();
   if (map.getLayer('dev-labels')) map.setLayoutProperty('dev-labels', 'text-field', devLabelExpr());
   if ($('#search').value) runSearch($('#search').value);
-  if (state.page) renderPage(state.page, { move: false });
+  if (state.page) renderPage(state.page, { move: false, keep: true });
+  renderHazards();
+  if (state.selected && hazById.has(state.selected)) renderHazDetail(hazById.get(state.selected));
   changeLang.busy = true;
   if (tour) showStep(tour.i);
   else if (!$('#tour').hidden) maybeShowHint(true);
@@ -1496,7 +1600,7 @@ function addDevLayers() {
     'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)', 0.15, 'rgba(250,204,21,0.35)', 0.4, 'rgba(245,158,11,0.6)', 0.7, 'rgba(239,68,68,0.75)', 1, 'rgba(255,255,255,0.9)'],
     'heatmap-opacity': 0.75,
   } }, before);
-  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
+  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
   const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
   map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 12, 2.2] } });
   map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
@@ -1504,7 +1608,7 @@ function addDevLayers() {
   const corridor = ['==', ['get', 'mode'], RAIL_MODE];
   map.addLayer({ id: 'backbone-power', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: corridor, paint: { 'line-color': DEV_THEMES.energy, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7], 'line-dasharray': [4, 2] } });
   map.addLayer({ id: 'backbone-fiber', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: ['any', corridor, ['all', ['==', ['get', 'category'], 'ring'], ['==', ['get', 'tier'], 'national']]], paint: { 'line-color': DEV_THEMES.connectivity, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, -3, 12, -7], 'line-dasharray': [1, 1.5] } });
-  const pt = ['==', ['geometry-type'], 'Point'];
+  const pt = isPoint;
   const proposed = ['==', ['get', 'status'], 'proposed'];
   const circlePaint = {
     'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['case', proposed, 4.5, 2.5], 12, ['case', proposed, 9, 5.5]],
@@ -1578,7 +1682,7 @@ function renderDevPanel() {
     const on = state.devThemes.has(k);
     const c = counts[k] ?? { existing: 0, proposed: 0 };
     return `<li class="layer ${on ? '' : 'off'}" data-k="${k}" role="switch" tabindex="0" aria-checked="${on}">
-      <span class="swatch" style="--c:${color}"><i class="theme"></i></span>
+      <span class="swatch theme-ico" style="--c:${color}">${ico(THEME_ICON[k])}</span>
       <span class="layer-name">${esc(name)}<small>${esc(hint)}</small></span>
       <span class="layer-meta">${c.existing ? `${fmtPeople(c.existing)} · ` : ''}${c.proposed ? `<b style="color:${color}">${c.proposed}</b>` : ''}</span>
       <span class="switch"></span></li>`;
@@ -1605,7 +1709,7 @@ function devItemHTML(f) {
   const p = f.properties;
   const sub = [t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'), t(`theme.${p.theme}`)[0], p.dept].filter(Boolean).join(' · ');
   return `<li><button class="item" data-id="${p.id}" style="--c:${DEV_THEMES[p.theme]}">
-      <span class="dotc"></span>
+      <span class="ico-c">${ico(THEME_ICON[p.theme])}</span>
       <span class="t"><b>${esc(devName(p))}</b><small>${esc(sub)}</small></span>
       <span class="k"></span></button></li>`;
 }
@@ -1664,6 +1768,7 @@ function devFacts(p) {
 }
 
 function clearDevSelection() {
+  for (const l of ['haz-sel-line', 'haz-sel-pt']) map.getLayer(l) && map.setFilter(l, ['==', ['get', 'id'], '']);
   if (!map.getLayer('dev-sel')) return;
   map.setFilter('dev-sel', ['==', ['get', 'id'], '']);
   map.setFilter('dev-sel-line', ['==', ['get', 'id'], '']);
@@ -1706,17 +1811,14 @@ function renderDevDetail(f) {
   const facts = devFacts(p);
   const el = $('#detail');
   el.innerHTML = `
-    <div class="detail-top">
-      <span class="pill" style="--c:${color}">${esc(t(`kind.${p.kind}`))}</span>
-      <button class="icon-btn" id="detailClose" aria-label="${t('btn.close')}">${ICONS.close}</button>
-    </div>
+    <div class="detail-top">${backBtn()}<span class="pill" style="--c:${color}">${ico(THEME_ICON[p.theme])}${esc(t(`kind.${p.kind}`))}</span></div>
     <h2>${esc(devName(p))}</h2>
     <div class="badges">
       <span class="badge ${p.status}">${t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing')}</span>
       <span class="badge">${esc(t(`theme.${p.theme}`)[0])}</span>
     </div>
     <p class="note">${esc(devWhy(p))}</p>
-    ${facts.length ? `<div class="facts">${facts.map(([v, k]) => factHTML(v, esc(k), k === t('fact.dept') && v === p.dept ? 'dept' : null)).join('')}</div>` : '<div style="height:12px"></div>'}
+    ${facts.length ? `<div class="facts">${facts.map(([v, k]) => factHTML(v, esc(k), k === t('fact.dept') && v === p.dept ? 'dept' : null, '', k === t('fact.dept') ? 'mapf' : null)).join('')}</div>` : '<div style="height:12px"></div>'}
     <div class="actions">
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t('btn.gmaps')}</a>
@@ -1768,7 +1870,7 @@ function engineeringHTML(f, s, sm) {
     return `<div class="eng">
       <div class="profile-head"><h3>${t('eng.title')}</h3></div>
       <p class="eng-spec">${esc(t(e.spec))}</p>
-      <div class="eng-tiles"><div class="cost tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtRange(25, 45)}</b><span>${t('eng.cost')}</span></div><div class="tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtMin(km / 30 + 0.5)}</b><span>${t('eng.crossing')}</span></div></div>
+      <div class="eng-tiles"><div class="cost tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtRange(25, 45)}</b><span>${ico('coin')}${t('eng.cost')}</span></div><div class="tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtMin(km / 30 + 0.5)}</b><span>${ico('ship')}${t('eng.crossing')}</span></div></div>
       <p class="source">${t('eng.costNote')}</p></div>`;
   }
   // A grade-limited track line through the terrain: where the ground is far above it → tunnel (or a
@@ -1810,15 +1912,15 @@ function engineeringHTML(f, s, sm) {
   const order = ['surface', 'mountain', 'viaduct', 'tunnel'].filter((key) => parts[key] > 0.05);
   f._eng = { kind: k, parts, mid, order };
   const tile = (b, label) => `<div class="tap info" data-act="speed" role="button" tabindex="0"><b>${b}</b><span>${label}</span></div>`;
-  const times = [tile(fmtMin(km / e.car), t('eng.car'))];
-  if (e.train) times.push(tile(fmtMin(km / e.train), t('eng.train')));
+  const times = [tile(fmtMin(km / e.car), ico('car') + t('eng.car'))];
+  if (e.train) times.push(tile(fmtMin(km / e.train), ico('train') + t('eng.train')));
   return `<div class="eng">
     <div class="profile-head"><h3>${t('eng.title')}</h3></div>
     <p class="eng-spec">${esc(t(e.spec))}</p>
     <div class="bar">${order.map((key) => `<span style="--c:${ENG_COLORS[key]};width:${(parts[key] / km) * 100}%" title="${t(`eng.${key}`)}"></span>`).join('')}</div>
-    <div class="legend-row legs" title="${esc(t('ex.sec'))}">${order.map((key) => `<button class="leg" data-act="sec" data-k="${key}" style="--c:${ENG_COLORS[key]}"><i></i>${t(`eng.${key}`)} ${fmtKm(parts[key])}</button>`).join('')}</div>
+    <div class="legend-row legs" title="${esc(t('ex.sec'))}">${order.map((key) => `<button class="leg" data-act="sec" data-k="${key}" style="--c:${ENG_COLORS[key]}">${ico(ENG_ICON[key])}${t(`eng.${key}`)} ${fmtKm(parts[key])}</button>`).join('')}</div>
     <div class="eng-tiles">
-      <div class="cost tap info" data-act="cost" role="button" tabindex="0"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('eng.cost')}</span></div>
+      <div class="cost tap info" data-act="cost" role="button" tabindex="0"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${ico('coin')}${t('eng.cost')}</span></div>
       ${times.join('')}
     </div>
     <p class="source">${t('eng.costNote')}</p>
@@ -1839,12 +1941,12 @@ function glanceHTML(f, conns) {
   const planned = (dev?.features ?? []).filter((d) => d.properties.status === 'proposed' && d.geometry.type === 'Point' && d.properties.place && norm(d.properties.place).startsWith(key) && haversine(here, d.geometry.coordinates) < 20).slice(0, 8);
   return `<div class="glance">
     <div class="eng-tiles three">
-      ${[['p5', 'city.p5'], ['p10', 'city.p10'], ['p25', 'city.p25']].map(([k, l]) => `<div class="tap info" data-act="people" role="button" tabindex="0"><b>${fmtPeople(st[k])}</b><span>${t(l)}</span></div>`).join('')}
+      ${[['p5', 'city.p5'], ['p10', 'city.p10'], ['p25', 'city.p25']].map(([k, l]) => `<div class="tap info" data-act="people" role="button" tabindex="0"><b>${fmtPeople(st[k])}</b><span>${ico('people')}${t(l)}</span></div>`).join('')}
     </div>
     <div class="facts">
-      ${factHTML(p.dept ?? '—', t('fact.dept'), p.dept ? 'dept' : null)}
-      ${factHTML(conns.length, t('city.routes'), conns.length ? 'routes' : null)}
-      ${factHTML(hosp == null ? '—' : fmtKm(hosp), t('city.hospital'), hospId ? 'hospital' : null, hospId ? `data-id="${hospId}"` : '')}
+      ${factHTML(p.dept ?? '—', t('fact.dept'), p.dept ? 'dept' : null, '', 'mapf')}
+      ${factHTML(conns.length, t('city.routes'), conns.length ? 'routes' : null, '', 'road')}
+      ${factHTML(hosp == null ? '—' : fmtKm(hosp), t('city.hospital'), hospId ? 'hospital' : null, hospId ? `data-id="${hospId}"` : '', 'hospital')}
     </div>
     ${planned.length ? `<p class="sub-head">${t('city.planned')}</p><div class="depts compact planned">${planned.map((d) => `<button class="chip" data-id="${d.properties.id}" style="border-color:${DEV_THEMES[d.properties.theme]}">${esc(t(`kind.${d.properties.kind}`))}</button>`).join('')}</div>` : ''}
   </div>`;
@@ -1856,7 +1958,8 @@ function glanceHTML(f, conns) {
 const EMPTY = { type: 'FeatureCollection', features: [] };
 
 // A fact tile. act: what a tap does (info = explain, nav = open something, copy = copy the value).
-function factHTML(v, label, act, extra = '') {
+function factHTML(v, label, act, extra = '', icon = null) {
+  if (icon) label = `${ico(icon)}${label}`;
   const kind = { dept: 'nav', routes: 'nav', hospital: 'nav', copy: 'copy' }[act] ?? 'info';
   const attrs = act ? ` class="fact tap ${kind}" data-act="${act}" role="button" tabindex="0" ${extra}` : ' class="fact"';
   return `<div${attrs}><b title="${esc(v)}">${esc(v)}</b><span>${label}</span></div>`;
@@ -1931,6 +2034,8 @@ function addHighlightLayers() {
   map.addSource('hl', { type: 'geojson', data: EMPTY });
   map.addSource('sec', { type: 'geojson', data: EMPTY });
   const lineL = { type: 'line', layout: { 'line-cap': 'round', 'line-join': 'round' } };
+  map.addSource('today', { type: 'geojson', data: EMPTY });
+  map.addLayer({ id: 'today-line', type: 'line', source: 'today', layout: { 'line-join': 'round' }, paint: { 'line-color': '#FCA5A5', 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [2, 1.6] } }, 'sel-glow');
   map.addLayer({ ...lineL, id: 'hl-glow', source: 'hl', filter: isLine, paint: { 'line-color': ['get', 'c'], 'line-width': widthPlus(12), 'line-blur': 7, 'line-opacity': 0.55 } }, 'sel-glow');
   map.addLayer({ ...lineL, id: 'hl-line', source: 'hl', filter: isLine, paint: { 'line-color': ['get', 'c'], 'line-width': widthPlus(2.5) } }, 'sel-glow');
   map.addLayer({ id: 'hl-point', type: 'circle', source: 'hl', filter: isPoint, paint: { 'circle-radius': 10, 'circle-color': ['get', 'c'], 'circle-opacity': 0.3, 'circle-stroke-color': ['get', 'c'], 'circle-stroke-width': 2.5 } });
@@ -1984,7 +2089,7 @@ function zoomToggle() {
 let numbers = null;
 getJSON('data/numbers.json').then((d) => {
   numbers = d;
-  if (state.page === 'numbers') renderPage('numbers', { move: false });
+  if (state.page === 'numbers') renderPage('numbers', { move: false, keep: true });
 }).catch(() => {});
 
 function openPage(name) {
@@ -2034,11 +2139,12 @@ function syncPage() {
   setFocus();
 }
 
-function renderPage(name, { move = true } = {}) {
+function renderPage(name, { move = true, keep = false } = {}) {
   const box = $('#page');
   if (!state.page && name) renderPage.saved = saveView();
   state.page = name;
   setHL([]);
+  setToday(null);
   if (!name) {
     box.innerHTML = '';
     if (renderPage.saved) map.flyTo({ ...MOVE, ...renderPage.saved });
@@ -2050,14 +2156,17 @@ function renderPage(name, { move = true } = {}) {
   const type = i < 0 ? name : name.slice(0, i);
   const key = i < 0 ? '' : name.slice(i + 1);
   const page = PAGES[type];
-  box.innerHTML = `<div class="detail-top page-top"><button class="back-btn" id="pageBack">${ICONS.back}<span>${t('btn.back')}</span></button></div>${page.html(key)}`;
+  box.innerHTML = `<div class="detail-top page-top">${backBtn('pageBack')}</div>${page.html(key)}`;
   box.querySelector('#pageBack').onclick = closePage;
   if (state.collapsed) setCollapsed(false);
   setTab(state.tab);
   page.wire?.(box, key, move);
   if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
-  $('#panelBody').scrollTop = 0;
+  if (!keep) $('#panelBody').scrollTop = 0;
 }
+
+// The same Back button everywhere: item cards, pages and departments.
+const backBtn = (id = 'detailClose') => `<button class="back-btn" id="${id}">${ICONS.back}<span>${t('btn.back')}</span></button>`;
 
 // ---------- Lists ----------
 const ISLAND_RX = /vache|cayemite|tortue|gonave/;
@@ -2143,9 +2252,9 @@ function numbersHTML() {
     <p class="sub">${t('num.sub')}</p>
     <div class="eng" style="margin-top:14px">
       <div class="eng-tiles">
-        <div class="cost"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${t('num.cost')}</span></div>
-        <div><b>${fmtKm(natKm)}</b><span>${t('num.nat')}</span></div>
-        <div><b>${fmtKm(localKm)}</b><span>${t('num.local')}</span></div>
+        <div class="cost"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${ico('coin')}${t('num.cost')}</span></div>
+        <div><b>${fmtKm(natKm)}</b><span>${ico('train')}${t('num.nat')}</span></div>
+        <div><b>${fmtKm(localKm)}</b><span>${ico('road')}${t('num.local')}</span></div>
       </div>
       <p class="sub-head" style="margin-top:12px">${t('num.build')}</p>
       <div class="bar">${order.map((k) => `<span style="--c:${ENG_COLORS[k]};width:${(sec[k] / secTot) * 100}%"></span>`).join('')}</div>
@@ -2154,11 +2263,11 @@ function numbersHTML() {
     </div>
     <p class="sub-head">${t('num.people')}</p>
     <div class="eng-tiles two">
-      <div><b>${pct(cv.road10, cv.people)}</b><span>${t('num.road10')}</span></div>
-      <div><b>${pct(cv.st5, cv.people)}</b><span>${t('num.st5')}</span></div>
+      <div><b>${pct(cv.road10, cv.people)}</b><span>${ico('people')}${t('num.road10')}</span></div>
+      <div><b>${pct(cv.st5, cv.people)}</b><span>${ico('station')}${t('num.st5')}</span></div>
     </div>
     <p class="sub-head" style="margin-top:16px">${t('num.byType')}</p>
-    <ul class="list">${ROAD_CATS.map((k) => `<li><button class="item" data-coll="cat-${k}" style="--c:${CATS[k].color}"><span class="dotc"></span><span class="t"><b>${catLabel(k)}</b><small>${esc(catHint(k))}</small></span><span class="k">${tot[k].count} · ${fmtKm(tot[k].km)}</span></button></li>`).join('')}</ul>
+    <ul class="list">${ROAD_CATS.map((k) => `<li><button class="item" data-coll="cat-${k}" style="--c:${CATS[k].color}"><span class="ico-c">${ico(CAT_ICON[k])}</span><span class="t"><b>${catLabel(k)}</b><small>${esc(catHint(k))}</small></span><span class="k">${tot[k].count} · ${fmtKm(tot[k].km)}</span></button></li>`).join('')}</ul>
     <p class="sub-head" style="margin-top:16px">${t('num.depts')}</p>
     <p class="source" style="margin:0 0 6px">${t('num.deptHint')}</p>
     <div class="table-wrap"><table class="dept-table">
@@ -2174,7 +2283,7 @@ function wireNumbers(box, key, move) {
     const k = b.dataset.sort;
     numSort.dir = numSort.key === k ? -numSort.dir : k === 'name' ? 1 : -1;
     numSort.key = k;
-    renderPage('numbers', { move: false });
+    renderPage('numbers', { move: false, keep: true });
   }));
   box.querySelectorAll('tr[data-dept]').forEach((r) => {
     r.onclick = () => goDept(r.dataset.dept);
@@ -2338,6 +2447,7 @@ function runTrip(move) {
   const { from, to } = state.trip;
   const ends = [from, to].filter(Boolean).map((id) => byId.get(id));
   setHL(ends, '#ffffff');
+  setToday(null);
   if (!from || !to) {
     out.innerHTML = '';
     if (move && ends.length) fitFeature(ends[0]);
@@ -2366,22 +2476,35 @@ function runTrip(move) {
     via += ((parts.viaduct ?? 0) * l.km) / l.f.properties.km;
   }
   const ferry = legs.some((l) => l.f.properties.category === 'ferry');
-  out.innerHTML = `<div class="eng" style="margin-top:14px">
+  out.innerHTML = `<div id="tripToday" class="compare-wrap"><p class="note">${t('trip.checking')}</p></div>
+    <div class="eng" style="margin-top:14px">
       <div class="eng-tiles">
-        <div><b>${fmtMin(car)}</b><span>${t('eng.car')}</span></div>
-        ${usesRail ? `<div><b>${fmtMin(train)}</b><span>${t('trip.withTrain')}</span></div>` : ''}
-        <div><b>${fmtKm(km)}</b><span>${t('fact.length')}</span></div>
+        <div><b>${fmtMin(car)}</b><span>${ico('car')}${t('eng.car')}</span></div>
+        ${usesRail ? `<div><b>${fmtMin(train)}</b><span>${ico('train')}${t('trip.withTrain')}</span></div>` : ''}
+        <div><b>${fmtKm(km)}</b><span>${ico('ruler')}${t('fact.length')}</span></div>
       </div>
       ${tun > 0.5 || via > 0.5 ? `<p class="note" style="margin-top:4px">${t('trip.built', { tun: fmtKm(tun), via: fmtKm(via) })}</p>` : ''}
       ${ferry ? `<p class="note" style="margin-top:4px">${t('trip.ferry')}</p>` : ''}
       <p class="source" style="margin:8px 0 0">${t('trip.note')}</p>
     </div>
+    <div class="actions" style="margin:-4px 0 16px"><button class="btn primary" id="tripFly">${ICONS.fly} ${t('btn.fly')}</button></div>
     <p class="sub-head">${t('trip.steps')}</p>
     <ul class="list">${legs.map((l) => itemHTML(l.f, fmtKm(l.km))).join('')}</ul>`;
   out.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
   const pathFeats = r.steps.map((s) => ({ geometry: { type: 'LineString', coordinates: sliceLine(s.f, s.fwd ? s.d0 : s.d1, s.fwd ? s.d1 : s.d0) }, properties: { category: s.f.properties.category, c: '#ffffff' } }));
   setHL([...pathFeats, ...ends], '#ffffff');
   if (move) fitFeats(pathFeats);
+  // The whole trip as one line, so the camera can fly it from start to finish.
+  const coords = [];
+  for (const pf of pathFeats) for (const c of pf.geometry.coordinates) if (!coords.length || haversine(coords.at(-1), c) > 0.005) coords.push(c);
+  const trip = {
+    geometry: { type: 'LineString', coordinates: coords },
+    properties: { name: `${byId.get(from).properties.name} → ${byId.get(to).properties.name}`, category: 'corridor' },
+    _cum: cumulative(coords),
+    _bbox: bboxOf(coords),
+  };
+  out.querySelector('#tripFly').onclick = () => flyAlong(trip);
+  compareToday(byId.get(from), byId.get(to), usesRail ? train : car, usesRail);
 }
 
 // ===========================================================================
@@ -2523,5 +2646,240 @@ function clearPadding() {
 }
 function fitView(bounds, opts) {
   clearPadding();
-  if (map.cameraForBounds(bounds, { padding: opts.padding })) map.fitBounds(bounds, opts);
+  if (safeCam(bounds, { padding: opts.padding })) map.fitBounds(bounds, opts);
+}
+// MapLibre 5 throws (instead of returning nothing) when the padding leaves no room; retry without the
+// map's leftover padding, and give up quietly if it still does not fit.
+function safeCam(bounds, opts) {
+  try {
+    return map.cameraForBounds(bounds, opts);
+  } catch {
+    clearPadding();
+    try {
+      return map.cameraForBounds(bounds, opts);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+// ===========================================================================
+// Today vs. the plan: the same trip on today's roads (OSRM routing on OpenStreetMap, FOSSGIS server)
+// ===========================================================================
+const todayCache = new Map();
+function setToday(geom) {
+  map.getSource('today')?.setData(geom ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: geom }] } : EMPTY);
+}
+async function compareToday(fromF, toF, planHrs, usesRail) {
+  const key = `${fromF.properties.id}-${toF.properties.id}`;
+  const box = () => (state.trip.from === fromF.properties.id && state.trip.to === toF.properties.id ? $('#tripToday') : null);
+  let r = todayCache.get(key);
+  if (!r) {
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 9000);
+      const [a, b] = [fromF, toF].map((f) => f.geometry.coordinates.map((v) => v.toFixed(5)).join(','));
+      const res = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${a};${b}?overview=simplified&geometries=geojson`, { signal: ctl.signal });
+      clearTimeout(timer);
+      const j = await res.json();
+      if (j.code !== 'Ok' || !j.routes?.length) throw new Error(j.code);
+      r = { hrs: j.routes[0].duration / 3600, km: j.routes[0].distance / 1000, geom: j.routes[0].geometry };
+      todayCache.set(key, r);
+    } catch {
+      box()?.remove();
+      return;
+    }
+  }
+  const el = box();
+  if (!el) return;
+  const gain = r.hrs - planHrs;
+  el.innerHTML = `<div class="compare">
+      <div class="cmp today"><span>${ico('car')}${t('trip.todayBy')}</span><b>${fmtMin(r.hrs)}</b><small>${fmtKm(r.km)}</small></div>
+      <div class="cmp-arrow" aria-hidden="true">→</div>
+      <div class="cmp plan"><span>${ico(usesRail ? 'train' : 'car')}${t('trip.withPlan')}</span><b>${fmtMin(planHrs)}</b><small>${t(usesRail ? 'trip.withTrain' : 'eng.car')}</small></div>
+    </div>
+    ${gain > 0.15 ? `<p class="cmp-gain">${t('trip.faster', { time: fmtMin(gain) })}</p>` : ''}
+    <p class="source" style="margin:6px 0 0">${t('trip.todayNote')}</p>`;
+  setToday(r.geom);
+}
+
+// ===========================================================================
+// Hazards: hurricane tracks (NOAA IBTrACS, built by tools/build-hazards.mjs), active storms (NOAA NHC map
+// service) and earthquakes (USGS catalog, fetched live). Shown from the Development tab.
+// ===========================================================================
+const hazById = new Map();
+state.haz = { storms: false, quakes: false };
+const haz = { storms: null, quakes: null, live: null, status: {} };
+const STORM_COLORS = { '-1': '#7DD3FC', 0: '#FACC15', 1: '#FDBA74', 2: '#FB923C', 3: '#F97316', 4: '#EF4444', 5: '#D946EF' };
+const stormColorExpr = ['match', ['get', 'cat'], ...Object.entries(STORM_COLORS).flatMap(([k, v]) => [Number(k), v]), '#FACC15'];
+const stormCat = (c) => (c < 0 ? t('haz.td') : c === 0 ? t('haz.ts') : t('haz.cat', { n: c }));
+const fmtDate = (d) => new Date(d).toLocaleDateString(locale(), { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+function addHazardLayers() {
+  for (const id of ['haz-storms', 'haz-quakes', 'haz-live']) map.addSource(id, { type: 'geojson', data: EMPTY });
+  const hidden = { visibility: 'none' };
+  const before = 'casing-local';
+  map.addLayer({ id: 'haz-storms', type: 'line', source: 'haz-storms', layout: { ...hidden, 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': stormColorExpr, 'line-width': ['interpolate', ['linear'], ['get', 'cat'], -1, 1.2, 0, 1.6, 5, 4], 'line-opacity': 0.8 } }, before);
+  map.addLayer({ id: 'haz-live-cone', type: 'fill', source: 'haz-live', filter: isPoly, layout: hidden, paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } }, before);
+  map.addLayer({ id: 'haz-live-track', type: 'line', source: 'haz-live', filter: isLine, layout: hidden, paint: { 'line-color': '#ffffff', 'line-width': 2.5, 'line-dasharray': [2, 1.5] } }, before);
+  map.addLayer({ id: 'haz-sel-line', type: 'line', source: 'haz-storms', filter: ['==', ['get', 'id'], ''], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.9 } }, before);
+  const magR = ['interpolate', ['exponential', 1.8], ['get', 'mag'], 4.5, 2.5, 6, 7, 7.5, 16];
+  map.addLayer({ id: 'haz-quakes', type: 'circle', source: 'haz-quakes', layout: hidden, paint: {
+    'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, ['*', 0.7, magR], 10, ['*', 1.5, magR]],
+    'circle-color': ['interpolate', ['linear'], ['get', 'yr'], 1900, '#FDE68A', 1990, '#FB923C', 2026, '#EF4444'],
+    'circle-opacity': 0.55, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1, 'circle-stroke-opacity': 0.8,
+  } });
+  map.addLayer({ id: 'haz-quake-labels', type: 'symbol', source: 'haz-quakes', filter: ['>=', ['get', 'mag'], 6.5], layout: { ...hidden, 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': PHONE.matches ? 13 : 11, 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-optional': true }, paint: { 'text-color': '#FECACA', 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } });
+  map.addLayer({ id: 'haz-sel-pt', type: 'circle', source: 'haz-quakes', filter: ['==', ['get', 'id'], ''], paint: { 'circle-radius': 16, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+}
+
+async function loadStorms() {
+  if (haz.storms) return;
+  haz.status.storms = 'loading';
+  try {
+    const d = await getJSON('data/storms.json');
+    haz.storms = d.storms.map((s, i) => {
+      const f = { type: 'Feature', properties: { id: `hs${i}`, kind: 'storm', name: s.name, year: s.year, cat: s.cat, wind: s.wind, km: s.km, date: s.date }, geometry: { type: 'LineString', coordinates: s.coords } };
+      // Frame the part of the track around Haiti, not the whole journey across the Atlantic.
+      const near = s.coords.filter(([x, y]) => x > -79 && x < -67 && y > 15 && y < 23);
+      f._bbox = bboxOf(near.length > 1 ? near : s.coords);
+      hazById.set(f.properties.id, f);
+      return f;
+    });
+    // Strongest drawn last, so they sit on top.
+    map.getSource('haz-storms').setData({ type: 'FeatureCollection', features: [...haz.storms].sort((a, b) => a.properties.cat - b.properties.cat) });
+    haz.status.storms = 'ok';
+  } catch {
+    haz.status.storms = 'error';
+  }
+}
+async function loadLiveStorms() {
+  haz.status.live = 'loading';
+  renderHazards();
+  const BASE = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer';
+  // Atlantic storm slots AT1–AT5: forecast track and cone layers.
+  const ids = [7, 8, 33, 34, 59, 60, 85, 86, 111, 112];
+  try {
+    const parts = await Promise.all(ids.map((id) => fetch(`${BASE}/${id}/query?where=1%3D1&outFields=*&f=geojson`).then((r) => r.json()).catch(() => null)));
+    const feats = parts.flatMap((p) => p?.features ?? []).filter((f) => f.geometry);
+    haz.live = feats;
+    const p = feats[0]?.properties ?? {};
+    haz.liveName = p.STORMNAME ?? p.stormname ?? p.NAME ?? p.name ?? null;
+    map.getSource('haz-live').setData({ type: 'FeatureCollection', features: feats });
+    haz.status.live = 'ok';
+  } catch {
+    haz.status.live = 'error';
+  }
+  renderHazards();
+}
+async function loadQuakes() {
+  if (haz.quakes) return;
+  haz.status.quakes = 'loading';
+  renderHazards();
+  try {
+    const url = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=16.5&maxlatitude=21.2&minlongitude=-75.8&maxlongitude=-68&minmagnitude=4.5&starttime=1900-01-01&orderby=time';
+    const d = await getJSON(url);
+    haz.quakes = d.features.map((q, i) => {
+      const [lon, lat, depth] = q.geometry.coordinates;
+      const yr = new Date(q.properties.time).getUTCFullYear();
+      const mag = Math.round(q.properties.mag * 10) / 10;
+      const f = { type: 'Feature', properties: { id: `hq${i}`, kind: 'quake', mag, yr, time: q.properties.time, place: q.properties.place, url: q.properties.url, depth, label: `M${mag.toFixed(1)} · ${yr}` }, geometry: { type: 'Point', coordinates: [lon, lat] } };
+      f._bbox = [lon, lat, lon, lat];
+      hazById.set(f.properties.id, f);
+      return f;
+    });
+    // Smaller and older drawn first, so big recent ones stay on top.
+    map.getSource('haz-quakes').setData({ type: 'FeatureCollection', features: [...haz.quakes].sort((a, b) => a.properties.mag - b.properties.mag) });
+    haz.status.quakes = 'ok';
+  } catch {
+    haz.status.quakes = 'error';
+  }
+}
+
+async function toggleHaz(k) {
+  state.haz[k] = !state.haz[k];
+  const on = state.haz[k];
+  const vis = (ids) => ids.forEach((id) => map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
+  renderHazards();
+  if (k === 'storms') {
+    if (on) {
+      await loadStorms();
+      loadLiveStorms();
+      // Storm tracks make sense from a little higher up.
+      if (map.getZoom() > 6.2) fitView([[-80, 14.5], [-66, 23.5]], { padding: pad(), pitch: 0, bearing: 0, ...MOVE });
+    }
+    vis(['haz-storms', 'haz-live-cone', 'haz-live-track']);
+  } else {
+    if (on) await loadQuakes();
+    vis(['haz-quakes', 'haz-quake-labels']);
+  }
+  renderHazards();
+}
+
+function renderHazards() {
+  const ul = $('#hazards');
+  if (!ul) return;
+  const meta = (k, n) => (haz.status[k] === 'loading' ? t('haz.loading') : haz.status[k] === 'error' ? '—' : n ?? '');
+  ul.innerHTML = [
+    ['storms', t('haz.storms'), t('haz.stormsHint'), ico('storm'), meta('storms', haz.storms?.length), '#F97316'],
+    ['quakes', t('haz.quakes'), t('haz.quakesHint'), ico('quake'), meta('quakes', haz.quakes?.length), '#EF4444'],
+  ].map(([k, name, hint, sw, m, col]) => `<li class="layer ${state.haz[k] ? '' : 'off'}" data-h="${k}" role="switch" tabindex="0" aria-checked="${state.haz[k]}">
+      <span class="swatch theme-ico" style="--c:${col}">${sw}</span>
+      <span class="layer-name">${esc(name)}<small>${esc(hint)}</small></span>
+      <span class="layer-meta">${m}</span><span class="switch"></span></li>`).join('');
+  ul.querySelectorAll('[data-h]').forEach((li) => {
+    li.onclick = () => toggleHaz(li.dataset.h);
+    li.onkeydown = (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleHaz(li.dataset.h));
+  });
+  const notes = [];
+  if (state.haz.storms) {
+    notes.push(`<div class="haz-legend">${[-1, 0, 1, 2, 3, 4, 5].map((c) => [c, STORM_COLORS[c]]).map(([c, col]) => `<span style="--c:${col}"><i></i>${c < 0 ? 'TD' : c == 0 ? 'TS' : `Cat ${c}`}</span>`).join('')}</div>`);
+    const live = haz.status.live === 'loading' ? t('haz.loading') : haz.status.live === 'error' ? t('haz.unavailable') : haz.live?.length ? `<b>${esc(t('haz.live', { name: haz.liveName ?? '' }))}</b> ${esc(t('haz.liveNote'))}` : t('haz.noLive');
+    notes.push(`<p class="count-key">${live}</p>`);
+  }
+  if (state.haz.quakes && haz.status.quakes === 'error') notes.push(`<p class="count-key">${t('haz.unavailable')}</p>`);
+  $('#hazNote').innerHTML = notes.join('');
+}
+
+function selectHaz(id, { move = true } = {}) {
+  if (tour) endTour();
+  const f = hazById.get(id);
+  stopFly();
+  clearSelection();
+  state.selected = id;
+  const isPt = f.geometry.type === 'Point';
+  map.setFilter('haz-sel-pt', ['==', ['get', 'id'], isPt ? id : '']);
+  map.setFilter('haz-sel-line', ['==', ['get', 'id'], isPt ? '' : id]);
+  if (state.collapsed) setCollapsed(false);
+  $('#search').value = '';
+  $('#results').hidden = true;
+  setTab(state.tab);
+  renderHazDetail(f);
+  if (PHONE.matches && $('#panel').dataset.state === 'peek') setSheet('half');
+  openedPage();
+  if (move) requestAnimationFrame(() => (isPt ? fitFeature(f, { zoom: Math.max(map.getZoom(), 8.5) }) : fitFeature(f, { whole: true })));
+}
+
+function renderHazDetail(f) {
+  const p = f.properties;
+  const el = $('#detail');
+  const storm = p.kind === 'storm';
+  const color = storm ? STORM_COLORS[p.cat] : '#FCA5A5';
+  const facts = storm
+    ? [[stormCat(p.cat), t('haz.catNear'), 'storm'], [p.wind ? `${Math.round(p.wind * 1.852)} km/h` : '—', t('haz.windNear'), 'wind'], [`${p.km} km`, t('haz.closest'), 'ruler']]
+    : [[`M ${p.mag.toFixed(1)}`, t('haz.mag'), 'quake'], [`${Math.round(p.depth)} km`, t('haz.depth'), 'depth'], [String(p.yr), t('haz.date'), 'calendar']];
+  el.innerHTML = `
+    <div class="detail-top">${backBtn()}<span class="pill" style="--c:${color}">${ico(storm ? 'storm' : 'quake')}${t(storm ? 'haz.storm' : 'haz.quake')}</span></div>
+    <h2>${esc(storm ? `${p.name || t('haz.unnamed')} ${p.year}` : `M ${p.mag.toFixed(1)} · ${p.yr}`)}</h2>
+    <p class="sub">${esc(storm ? `${t('haz.when')}: ${fmtDate(p.date)}` : `${fmtDate(p.time)}${p.place ? ` · ${p.place}` : ''}`)}</p>
+    <div class="facts">${facts.map(([v, k, i]) => factHTML(v, k, null, '', i)).join('')}</div>
+    <div class="actions">
+      <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
+      ${storm ? '' : `<a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener">${ICONS.map} ${t('haz.usgs')}</a>`}
+    </div>
+    <p class="note">${t(storm ? 'haz.stormNote' : 'haz.quakeNote')}</p>
+    <p class="source" style="margin-top:10px">${storm ? 'NOAA NCEI IBTrACS v04r01' : 'USGS ComCat'}</p>`;
+  el.hidden = false;
+  el.querySelector('#detailClose').onclick = closeSelection;
+  el.querySelector('#btnZoom').onclick = () => fitFeature(f, f.geometry.type === 'Point' ? { zoom: 10 } : { whole: true });
 }

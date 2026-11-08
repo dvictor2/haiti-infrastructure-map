@@ -1,5 +1,5 @@
-import { DEV } from './i18n-dev.js?v=20261110a';
-import { UX } from './i18n-ux.js?v=20261110a';
+import { DEV } from './i18n-dev.js?v=20261112a';
+import { UX } from './i18n-ux.js?v=20261112a';
 
 // Interface translations. Place and route names from the plan are proper names and stay as written.
 // Languages: the five most spoken in the Americas, including Haitian Creole.
@@ -544,9 +544,10 @@ for (const code of Object.keys(UX)) Object.assign(S[code], UX[code]);
 
 let current = 'en';
 
+// A language the visitor picked from the menu wins; otherwise follow the browser's languages, else English.
 export function pickInitialLang() {
   try {
-    const saved = localStorage.getItem('lang');
+    const saved = localStorage.getItem('langChosen');
     if (saved && S[saved]) return saved;
   } catch {
     /* storage unavailable */
@@ -558,11 +559,12 @@ export function pickInitialLang() {
   return 'en';
 }
 
-export function setLang(code) {
+export function setLang(code, { remember = false } = {}) {
   current = S[code] ? code : 'en';
   document.documentElement.lang = current;
   try {
-    localStorage.setItem('lang', current);
+    // Only an explicit choice is remembered, so the automatic pick keeps following the browser.
+    if (remember) localStorage.setItem('langChosen', current);
   } catch {
     /* storage unavailable */
   }

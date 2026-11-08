@@ -9,9 +9,13 @@ import { HAITI_PROJECT_SPECS } from '../source/haitiProjectSpecs.js';
 
 const departments = JSON.parse(readFileSync(new URL('../source/departments.json', import.meta.url)));
 
+// Short explanations for some sites, by original label; the text itself is translated in i18n-ux.js (about.<key>).
+const ABOUT = { 'Beloc Potential NC Site': 'beloc', 'MSP(Maximum Security Prison)': 'msp', MSP: 'msp' };
+
 // Light clean-up of display names. The originals are kept in `original`.
 const RENAMES = {
   'Bigest metal mines': 'Biggest metal mines',
+  'Beloc Potential NC Site': 'Beloc',
   'Jeremie to Port Salue': 'Jérémie to Port-Salut',
   'Port Salue to Cayes': 'Port-Salut to Les Cayes',
   'Cayes to Jeremie': 'Les Cayes to Jérémie',
@@ -31,6 +35,7 @@ const RENAMES = {
   'DR-Haiti Border': 'Haiti–DR border (centre)',
   Border: 'Haiti–DR border (south)',
   'MSP(Maximum Security Prison)': 'MSP — Maximum Security Prison',
+  MSP: 'MSP — Maximum Security Prison',
 };
 
 const DEPT_HINTS = {
@@ -212,6 +217,7 @@ const features = HAITI_PROJECT_SPECS.map((spec, i) => {
       sort: CATEGORY_ORDER.indexOf(category),
       mode: modeFor(category, spec),
       tunnel: tunnelFor(spec.label),
+      ...(ABOUT[spec.label] ? { about: ABOUT[spec.label] } : {}),
     },
     geometry,
   };

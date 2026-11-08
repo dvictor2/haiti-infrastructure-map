@@ -44,6 +44,19 @@ node tools/build-numbers.mjs
 
 The trip planner builds its road graph in the browser from `data/plan.geojson`; times use the design speeds in `ENG` (app.js), not today's roads.
 
+For comparison, each trip is also routed on **today's roads** with [OSRM](https://project-osrm.org/) on the FOSSGIS server (`routing.openstreetmap.de`, OpenStreetMap data). It is a free shared service meant for light use.
+
+## Hazards
+
+The Development tab's **Hazards** section shows:
+
+- **Hurricane tracks**: every North Atlantic storm since 1950 that passed within 250 km of Haiti, from NOAA NCEI IBTrACS v04r01 (public domain). Built by `node tools/build-hazards.mjs` → `data/storms.json`. Active storms and their forecast cones come live from the NOAA National Hurricane Center map service.
+- **Earthquakes**: magnitude 4.5 and above since 1900 around Hispaniola, fetched live from the USGS ComCat catalog.
+
+## Map engine
+
+MapLibre GL JS 5 with the globe projection: a first visit opens on the whole Earth and swoops down to Haiti; the map flattens as you zoom in.
+
 ## Publish
 
 Any static host works. On GitHub Pages: Settings → Pages → Deploy from a branch → `main` / root.
