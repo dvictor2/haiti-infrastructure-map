@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261108a';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -1069,6 +1069,7 @@ function buildPanel() {
     });
     z.addEventListener('pointermove', (e) => {
       if (!drag || drag.z !== z) return;
+      drag.lastY = e.clientY;
       const dy = e.clientY - drag.y;
       if (!drag.moved && Math.abs(dy) > 8) {
         drag.moved = true;
@@ -1082,7 +1083,8 @@ function buildPanel() {
       const { moved } = drag;
       const vh = window.innerHeight;
       // Height of the sheet where the finger let go.
-      const released = clamp(drag.h - (e.clientY - drag.y), 0, vh);
+      // Use the last real finger position: a cancelled touch can report a bogus position.
+      const released = clamp(drag.h - ((drag.lastY ?? drag.y) - drag.y), 0, vh);
       sheet.style.transition = '';
       sheet.style.height = '';
       drag = null;
