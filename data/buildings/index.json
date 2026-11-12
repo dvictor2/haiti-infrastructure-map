@@ -1,0 +1,25 @@
+{
+ "release": "2026-10-21.0",
+ "zoom": 14,
+ "bounds": [
+  -74.4873,
+  18.02053,
+  -71.60889,
+  20.09721
+ ],
+ "buildings": 4218530,
+ "parts": [
+  {
+   "file": "haiti-buildings-1.pmtiles",
+   "x0": 4802,
+   "x1": 4899,
+   "bytes": 28731040
+  },
+  {
+   "file": "haiti-buildings-2.pmtiles",
+   "x0": 4900,
+   "x1": 4932,
+   "bytes": 19529656
+  }
+ ]
+}

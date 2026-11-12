@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116g';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116i';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -180,26 +180,23 @@ const style = {
     'fog-ground-blend': 0.85,
     'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
   },
+  // One sun for the 3D buildings, in the east-south-east like the sun in models3d.js.
+  light: { anchor: 'map', position: [1.3, 110, 40], intensity: 0.45, color: '#fff6e8' },
   glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
   sources: {
     satellite: {
       type: 'raster',
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
-      maxzoom: 19,
+      // Zoom 19 photos are missing outside the big cities (Esri sends a "Map data not yet available" tile);
+      // stretching zoom 18 looks almost the same and never shows that grey tile.
+      maxzoom: 18,
       attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
     },
     osm: {
       type: 'vector',
       url: 'https://tiles.openfreemap.org/planet',
-      attribution: 'Labels © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="https://openfreemap.org">OpenFreeMap</a>',
-    },
-    streets: {
-      type: 'raster',
-      tiles: ['a', 'b', 'c', 'd'].map((s) => `https://${s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png`),
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: 'Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="https://openfreemap.org">OpenFreeMap</a>',
     },
     dem: {
       type: 'raster-dem',
@@ -220,8 +217,7 @@ const style = {
   layers: [
     { id: 'bg', type: 'background', paint: { 'background-color': '#0d1117' } },
     { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-saturation': -0.15, 'raster-brightness-max': 0.88, 'raster-contrast': 0.08 } },
-    { id: 'streets', type: 'raster', source: 'streets', layout: { visibility: 'none' } },
-    { id: 'hillshade', type: 'hillshade', source: 'demShade', layout: { visibility: 'none' }, paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#3b3f46' } },
+    ...streetLayers(),
     ...osmLabelLayers(),
   ],
 };
@@ -229,6 +225,54 @@ const style = {
 // Read before the map is created: MapLibre writes its own `v=` into the hash on start-up.
 // A saved whole-globe view (e.g. a reload during the opening swoop) counts as no view, so the swoop replays.
 const hadView = Number(location.hash.match(/(?:^#|&)v=([\d.]+)/)?.[1] ?? 0) >= 3;
+// The street map: drawn here from the same OpenStreetMap vector tiles the labels come from (OpenFreeMap, no key),
+// so it stays sharp at every zoom. Every layer id starts with "st-" and all are hidden while the photo is shown
+// (see toggleBase). The relief shading sits between the land and the roads.
+function streetLayers() {
+  const cls = (...c) => ['in', ['get', 'class'], ['literal', c]];
+  const w = (...stops) => ['interpolate', ['exponential', 1.6], ['zoom'], ...stops];
+  const hidden = { visibility: 'none' };
+  const fill = (id, layer, filter, paint, minzoom = 0) => ({ id, type: 'fill', source: 'osm', 'source-layer': layer, minzoom, ...(filter ? { filter } : {}), layout: hidden, paint });
+  const line = (id, layer, filter, paint, minzoom = 0, layout = {}) => ({ id, type: 'line', source: 'osm', 'source-layer': layer, minzoom, filter, layout: { ...hidden, 'line-cap': 'round', 'line-join': 'round', ...layout }, paint });
+  const isLine = ['==', ['geometry-type'], 'LineString'];
+  // Roads in three groups, each as a darker edge with a lighter road on top; wider with zoom.
+  const roads = [
+    ['minor', cls('minor', 'service'), 12.5, '#ffffff', '#cfc7b8', ['match', ['get', 'class'], 'service', 0.6, 1], [12.5, 0.6, 15, 3, 18, 14, 20, 44]],
+    ['mid', cls('secondary', 'tertiary'), 9, '#fff6d6', '#d9c88f', ['match', ['get', 'class'], 'tertiary', 0.8, 1], [9, 0.7, 13, 2.6, 15, 6, 18, 20, 20, 60]],
+    ['major', cls('motorway', 'trunk', 'primary'), 5, '#fbdc8c', '#cfa850', 1, [5, 0.6, 9, 1.6, 13, 4, 15, 8, 18, 26, 20, 76]],
+  ];
+  const widths = (stops, scale, add) => w(...stops.flatMap((v, i) => (i % 2 ? [['+', ['*', v, scale], add]] : [v])));
+  return [
+    { id: 'st-land', type: 'background', layout: hidden, paint: { 'background-color': '#f3f0e9' } },
+    fill('st-residential', 'landuse', cls('residential', 'suburb', 'neighbourhood'), { 'fill-color': '#ebe6dc' }),
+    fill('st-farm', 'landcover', cls('farmland'), { 'fill-color': '#eef0dc' }),
+    fill('st-grass', 'landcover', cls('grass'), { 'fill-color': '#dcebcc' }),
+    fill('st-wood', 'landcover', cls('wood'), { 'fill-color': '#cfe3bd' }),
+    fill('st-sand', 'landcover', cls('sand'), { 'fill-color': '#f4ebcb' }),
+    fill('st-wetland', 'landcover', cls('wetland'), { 'fill-color': '#cfe3d6' }),
+    fill('st-park', 'park', null, { 'fill-color': '#cfe5bf', 'fill-opacity': 0.4 }),
+    fill('st-work', 'landuse', cls('industrial', 'commercial', 'retail', 'railway'), { 'fill-color': '#e7e1e6' }),
+    fill('st-civic', 'landuse', cls('school', 'university', 'college', 'hospital', 'kindergarten'), { 'fill-color': '#f1e6d2' }),
+    fill('st-sport', 'landuse', cls('pitch', 'stadium', 'playground', 'track'), { 'fill-color': '#d3e8c6' }),
+    fill('st-cemetery', 'landuse', cls('cemetery'), { 'fill-color': '#d6e2cf' }),
+    fill('st-water', 'water', ['!=', ['get', 'brunnel'], 'tunnel'], { 'fill-color': '#a9d2e3' }),
+    line('st-waterway', 'waterway', ['!=', ['get', 'brunnel'], 'tunnel'], { 'line-color': '#a9d2e3', 'line-width': w(8, 0.5, 13, 1.6, 18, 9) }, 8),
+    { id: 'hillshade', type: 'hillshade', source: 'demShade', layout: hidden, paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#5b5f66' } },
+    fill('st-airfield', 'aeroway', ['==', ['geometry-type'], 'Polygon'], { 'fill-color': '#dedad0' }, 11),
+    line('st-taxiway', 'aeroway', ['all', isLine, cls('taxiway')], { 'line-color': '#d2cdc2', 'line-width': w(12, 1, 17, 16) }, 12, { 'line-cap': 'butt' }),
+    line('st-runway', 'aeroway', ['all', isLine, cls('runway')], { 'line-color': '#c9c4b8', 'line-width': w(10, 1.5, 14, 14, 17, 60) }, 10, { 'line-cap': 'butt' }),
+    line('st-path', 'transportation', cls('path', 'track'), { 'line-color': '#b9a88a', 'line-width': w(13.5, 0.6, 18, 3), 'line-dasharray': [2, 1.5] }, 13.5, { 'line-cap': 'butt' }),
+    ...roads.map(([id, filter, minzoom, , edge, scale, stops]) => line(`st-road-${id}-edge`, 'transportation', filter, { 'line-color': edge, 'line-width': widths(stops, scale, 1.6) }, minzoom)),
+    ...roads.map(([id, filter, minzoom, colour, , scale, stops]) => line(`st-road-${id}`, 'transportation', filter, { 'line-color': colour, 'line-width': widths(stops, scale, 0) }, minzoom)),
+    line('st-ferry', 'transportation', cls('ferry'), { 'line-color': '#6fa8c4', 'line-width': 1.2, 'line-dasharray': [3, 3] }, 8, { 'line-cap': 'butt' }),
+    line('st-border', 'boundary', ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]], { 'line-color': '#9a86a8', 'line-width': w(4, 0.8, 12, 2.2), 'line-dasharray': [4, 2] }, 3, { 'line-cap': 'butt' }),
+    {
+      id: 'st-road-names', type: 'symbol', source: 'osm', 'source-layer': 'transportation_name', minzoom: 13.5, filter: ['has', 'name'],
+      layout: { ...hidden, 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 13.5, 10, 18, 13], 'symbol-spacing': 320, 'text-max-angle': 35 },
+      paint: { 'text-color': '#4b4f57', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+    },
+  ];
+}
 // Place, water, peak and airport names from OpenStreetMap vector tiles.
 // The island-wide "Hispaniola" / "Española" label is filtered out on purpose.
 function osmLabelLayers() {
@@ -290,6 +334,9 @@ const isPoint = geomIs('Point');
 const inCats = (list) => ['in', ['get', 'category'], ['literal', list]];
 const tierIs = (t) => ['==', ['get', 'tier'], t];
 
+// The zoom from which today's buildings are drawn (see maybeLoadBuildings). Phones start a little closer.
+const BLD_FROM = PHONE.matches ? 15 : 14.3;
+
 // Each data layer: id → base filter. Visibility/department filters are added on top.
 const DATA_LAYERS = [
   { id: 'water-fill', filter: ['all', isPoly, inCats(['water'])], type: 'fill', paint: { 'fill-color': '#22D3EE', 'fill-opacity': 0.32 } },
@@ -312,6 +359,10 @@ const DATA_LAYERS = [
   { id: 'labels-infra', filter: ['all', isPoint, inCats(INFRA)], type: 'symbol', minzoom: 10.6, layout: { 'text-field': infraLabel(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-max-width': 9, 'text-optional': true }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } },
   { id: 'labels-lines', filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'bridge', 'ferry', 'ring', 'water'])], type: 'symbol', minzoom: 8.4, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-max-angle': 30, 'symbol-spacing': 420, 'text-padding': 4 }, paint: { 'text-color': catColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
   { id: 'labels-national', filter: ['all', isPoint, tierIs('national'), ['!', inCats(INFRA)]], type: 'symbol', minzoom: 4.8, layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10.5, 10, 13.5], 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': ['match', ['get', 'category'], 'water', '#A5F3FC', 'site', '#FED7AA', '#FFFFFF'], 'text-halo-color': '#05070a', 'text-halo-width': 1.6 } },
+  // In 3D a building in front of a line hides that stretch of it. This repeats every plan line as a row of dots in
+  // the line's colour, drawn over the buildings, so a route can still be followed through a town. Shown only while
+  // the 3D buildings are (see syncBuildings); on the line itself the dots are the line's own colour and vanish.
+  { id: 'lines-over', filter: ['all', isLine, ['!', inCats(['ferry', 'border'])]], type: 'symbol', minzoom: BLD_FROM + 0.4, layout: { visibility: 'none', 'symbol-placement': 'line', 'symbol-spacing': 14, 'icon-image': 'line-dot', 'icon-size': ['match', ['get', 'tier'], 'national', 1, 0.7], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-padding': 0 }, paint: { 'icon-color': catColor, 'icon-opacity': 0.92 } },
 ];
 const INTERACTIVE = ['icons-plan-major', 'icons-plan-minor', 'icons-dev-main', 'icons-dev-minor', 'haz-quakes', 'dev-points-main', 'dev-points-minor', 'points-infra', 'points-national', 'points-local', 'dev-lines-solid', 'dev-lines-dashed', 'lines-dashed', 'lines-national', 'lines-local', 'water-fill', 'site-fill', 'dev-fill', 'haz-storms'];
 
@@ -386,6 +437,7 @@ map.on('load', async () => {
   map.addLayer({ id: 'dept-line', type: 'line', source: 'depts', paint: { 'line-color': '#ffffff', 'line-opacity': 0.32, 'line-width': 1, 'line-dasharray': [3, 2] } });
   map.addLayer({ id: 'dept-focus', type: 'line', source: 'depts', filter: ['==', ['get', 'name'], ''], paint: { 'line-color': '#ffffff', 'line-width': 2.5, 'line-opacity': 0.9 } });
 
+  addLineDot();
   for (const L of DATA_LAYERS) {
     if (L.type === 'symbol') continue;
     map.addLayer({ id: L.id, type: L.type, source: 'plan', filter: L.filter, ...(L.minzoom ? { minzoom: L.minzoom } : {}), ...(L.layout ? { layout: L.layout } : {}), paint: L.paint });
@@ -412,7 +464,8 @@ map.on('load', async () => {
 
   map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } }, 'labels-local');
   map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } }, 'labels-local');
-  if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: 1.5 });
+  if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: reliefAt(map.getZoom()) });
+  map.on('zoom', applyRelief);
   // Bigger map labels on phones.
   if (PHONE.matches) {
     for (const layer of map.getStyle().layers) {
@@ -587,21 +640,40 @@ const ZOOM_SPLIT = 9;
 
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 
+// Relief is drawn 1.5 times taller from afar, so the mountains read on the national map, and at true height
+// up close, where real-size things (buildings, 3D models) stand on it. It eases between the two as you zoom.
+const RELIEF = { far: 1.5, near: 1, from: 12, to: 13.5 };
+function reliefAt(zoom) {
+  const x = Math.max(0, Math.min(1, (zoom - RELIEF.from) / (RELIEF.to - RELIEF.from)));
+  return RELIEF.far + (RELIEF.near - RELIEF.far) * x * x * (3 - 2 * x);
+}
+// Called while zooming. map.setTerrain() would rebuild the whole terrain on every step, so this sets the
+// height scale on the live terrain object instead (MapLibre reads it afresh each frame; checked with 5.24).
+function applyRelief() {
+  const terrain = map.terrain;
+  if (!state.terrain || !terrain || typeof terrain.exaggeration !== 'number') return;
+  const x = reliefAt(map.getZoom());
+  if (Math.abs(terrain.exaggeration - x) < 0.004) return;
+  terrain.exaggeration = x;
+  if (terrain.options) terrain.options.exaggeration = x;
+  map.triggerRepaint();
+}
 function toggleTerrain() {
   state.terrain = !state.terrain;
-  map.setTerrain(state.terrain ? { source: 'dem', exaggeration: 1.5 } : null);
+  map.setTerrain(state.terrain ? { source: 'dem', exaggeration: reliefAt(map.getZoom()) } : null);
   const b = $('#btn3d');
   b.classList.toggle('on', state.terrain);
   b.setAttribute('aria-pressed', state.terrain);
   if (state.terrain && map.getPitch() < 20) map.easeTo({ pitch: 50, duration: 900 });
   if (!state.terrain) map.easeTo({ pitch: 0, duration: 900 });
+  syncBuildings();
 }
 function toggleBase() {
   state.base = state.base === 'satellite' ? 'streets' : 'satellite';
   const sat = state.base === 'satellite';
   map.setLayoutProperty('satellite', 'visibility', sat ? 'visible' : 'none');
-  map.setLayoutProperty('streets', 'visibility', sat ? 'none' : 'visible');
-  map.setLayoutProperty('hillshade', 'visibility', sat ? 'none' : 'visible');
+  for (const l of map.getStyle().layers) if (l.id.startsWith('st-') || l.id === 'hillshade') map.setLayoutProperty(l.id, 'visibility', sat ? 'none' : 'visible');
+  syncBuildings();
   applyControlText();
   toast(t(sat ? 'toast.sat' : 'toast.streets'));
 }
@@ -3220,22 +3292,160 @@ function addIconLayers() {
 // ===========================================================================
 function addModels() {
   const before = 'labels-lines-local';
-  // Today's buildings, from OpenFreeMap, close up.
-  map.addLayer({ id: 'osm-buildings', type: 'fill-extrusion', source: 'osm', 'source-layer': 'building', minzoom: 14.5, paint: {
-    'fill-extrusion-color': '#a3a3a3', 'fill-extrusion-opacity': 0.75,
-    'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-  } }, before);
+  map.on('zoom', maybeLoadBuildings);
+  maybeLoadBuildings();
   // Gentle flow pulses along national routes (as in the original Antigravity map).
   map.addLayer({ id: 'flow-national', type: 'line', source: 'plan', minzoom: 6.5, filter: ['all', isLine, tierIs('national'), inCats(['corridor', 'trunk', 'ring'])], paint: { 'line-color': '#ffffff', 'line-opacity': 0.32, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.8, 12, 2], 'line-dasharray': [0, 4, 3] } }, 'sel-glow');
   animate3D();
+  map.on('moveend', maybeLoadModels);
+  maybeLoadModels();
 }
 
-// Flow pulses along the national routes (slow, and off for reduced motion).
+// Today's buildings, nationwide: every building mapped in Haiti (OpenStreetMap, Google and Microsoft, gathered by
+// Overture Maps) as a coloured block on the photo and on the street map. The outlines are real. The heights and
+// roof colours are ESTIMATES (almost no building in Haiti has a recorded height): see tools/build-buildings.mjs,
+// which cuts the files in data/buildings. Nothing is fetched until the map is zoomed in close.
+//   h height and m base in decimetres, c roof colour 0-5, x = stands on a 3D model place (left out).
+const BLD = { dir: 'data/buildings/', v: '20261111a', from: BLD_FROM };
+const ROOF = ['match', ['get', 'c'], 0, '#d8d4ca', 1, '#c9c5ba', 2, '#b3b0a6', 3, '#a9b2b6', 4, '#b08a74', 5, '#8fa3b5', '#c9c5ba'];
+const loadScript = (src) => new Promise((ok, fail) => document.head.append(Object.assign(document.createElement('script'), { src, onload: ok, onerror: () => fail(new Error('could not load ' + src)) })));
+function maybeLoadBuildings() {
+  if (maybeLoadBuildings.started || map.getZoom() < BLD.from - 1) return;
+  maybeLoadBuildings.started = true;
+  map.off('zoom', maybeLoadBuildings);
+  // Under every name, icon and point of the map, so those are never covered. (Lines are painted on the ground,
+  // so in 3D a building in front of a line hides that stretch of it, as a real one would; with 3D off nothing is hidden.)
+  const before = 'st-road-names';
+  Promise.all([fetch(`${BLD.dir}index.json?v=${BLD.v}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('no buildings index')))), loadScript('https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js')])
+    .then(([index]) => {
+      // The country is cut into a few files, west to east; a tile's column number says which file holds it.
+      const parts = index.parts.map((p) => ({ ...p, file: new pmtiles.PMTiles(new URL(`${BLD.dir}${p.file}?v=${BLD.v}`, location.href).href) }));
+      maplibregl.addProtocol('hb', async (req, abort) => {
+        const [z, x, y] = req.url.slice(5).split('/').map(Number);
+        const part = parts.find((p) => x >= p.x0 && x <= p.x1);
+        const tile = part && (await part.file.getZxy(z, x, y, abort.signal));
+        return { data: tile?.data ?? new Uint8Array() };
+      });
+      map.addSource('bld', { type: 'vector', tiles: ['hb://{z}/{x}/{y}'], minzoom: index.zoom, maxzoom: index.zoom, bounds: index.bounds, attribution: 'Buildings © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="https://docs.overturemaps.org/attribution/">Overture Maps Foundation</a>, Google, Microsoft' });
+      const onGround = ['!', ['has', 'x']];
+      // With 3D off, the street map shows the outlines flat.
+      map.addLayer({ id: 'bld-flat', type: 'fill', source: 'bld', 'source-layer': 'b', minzoom: BLD.from, filter: onGround, paint: { 'fill-color': '#dcd5c8', 'fill-outline-color': '#beb5a5', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], BLD.from, 0, BLD.from + 0.7, 1] } }, before);
+      map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'bld', 'source-layer': 'b', minzoom: BLD.from, filter: onGround, paint: {
+        'fill-extrusion-color': ROOF, 'fill-extrusion-vertical-gradient': true,
+        'fill-extrusion-height': ['/', ['get', 'h'], 10], 'fill-extrusion-base': ['/', ['coalesce', ['get', 'm'], 0], 10],
+        'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], BLD.from, 0, BLD.from + 0.7, 1],
+      } }, before);
+      syncBuildings();
+    })
+    .catch((e) => {
+      // Without the files (or the reader), fall back to OpenStreetMap's own buildings, on the street map only.
+      console.warn('Nationwide buildings not loaded:', e);
+      map.addLayer({ id: 'osm-buildings', type: 'fill-extrusion', source: 'osm', 'source-layer': 'building', minzoom: 14.5, paint: {
+        'fill-extrusion-color': '#c9c5ba', 'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+      } }, before);
+      syncBuildings();
+    });
+}
+// The dot of the 'lines-over' layer: a round dot stored as a distance field, so the map can tint it any colour.
+function addLineDot() {
+  const S = 20, R = 5.2, data = new Uint8ClampedArray(S * S * 4);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) data[(y * S + x) * 4 + 3] = 191 - (Math.hypot(x + 0.5 - S / 2, y + 0.5 - S / 2) - R) * 32;
+  map.addImage('line-dot', { width: S, height: S, data }, { sdf: true, pixelRatio: 2 });
+}
+// 3D on: blocks, on the photo and on the street map. 3D off: flat outlines on the street map, nothing on the photo.
+function syncBuildings() {
+  const show = (id, on) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  const streets = state.base !== 'satellite';
+  show('bld', state.terrain);
+  show('lines-over', state.terrain && !!map.getLayer('bld'));
+  show('bld-flat', !state.terrain && streets);
+  show('osm-buildings', state.terrain && streets);
+}
+
+// Real 3D models (models3d.js, ASSET_CREDITS.md): a few places in the plan shown with models made by 3D artists.
+// The models file and three.js are fetched only the first time the map is zoomed in near one of them.
+// `near`: the plan item the place belongs to (matched by name, or by kind + nearest point); `view`: how the
+// card's 3D view button frames it (centre, zoom, bearing), so the models are in sight.
+// Views start on the sunlit side (the sun in models3d.js is in the east-south-east), close enough that a
+// 40 m plane or a 130 m ship is more than a speck, then the slow orbit takes over.
+const MODEL_SITE = { station: 'Gonaïves · Porte Saint-Marc', line: 'Saint-Marc to Gonaïves', view: { center: [-72.67594, 19.4296], zoom: 18.4, bearing: 215, pitch: 68 } };
+const MODEL_PLACES = [
+  { type: 'rail', name: MODEL_SITE.station, view: MODEL_SITE.view },
+  // The airport's view is worked out from the runway in resolveModelPlaces (over the apron, looking up the runway).
+  { type: 'airport', kind: 'airportHub', at: [-72.4917, 19.0917], view: { zoom: 16.9, pitch: 68 } },
+  { type: 'wind', kind: 'wind', at: [-72.06375, 18.59542], view: { zoom: 15.9, bearing: 265, pitch: 72 } },
+  { type: 'solar', kind: 'solar', at: [-72.64708, 19.35375], view: { zoom: 18, bearing: 20, pitch: 56 } },
+  { type: 'ship', kind: 'port', at: [-72.3502, 18.55687], dock: [-72.3555, 18.5565], sea: [-72.383, 18.5617], seaLevel: true, view: { center: [-72.3566, 18.5567], zoom: 17.3, bearing: 40, pitch: 66 } },
+];
+let modelPlaces = null;
+function resolveModelPlaces() {
+  const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+  const nearest = (kind, at) => dev.features.filter((f) => f.properties.kind === kind && f.geometry.type === 'Point').sort((a, b) => d2(a.geometry.coordinates, at) - d2(b.geometry.coordinates, at))[0];
+  return MODEL_PLACES.map((p) => {
+    if (p.type === 'rail') {
+      const st = plan.features.find((f) => f.properties.name === MODEL_SITE.station && f.geometry.type === 'Point');
+      const ln = plan.features.find((f) => f.properties.name === MODEL_SITE.line && f.geometry.type === 'LineString');
+      if (!st || !ln) return null;
+      const c = st.geometry.coordinates;
+      let line = ln.geometry.coordinates;
+      if (d2(line[0], c) < d2(line.at(-1), c)) line = [...line].reverse(); // the line ends at the station
+      return { ...p, center: c, radius: 0.06, station: c, line };
+    }
+    if (p.type === 'airport') {
+      const hub = nearest('airportHub', p.at);
+      const rw = dev.features.filter((f) => f.properties.kind === 'runway').sort((a, b) => d2(a.geometry.coordinates[0], p.at) - d2(b.geometry.coordinates[0], p.at))[0];
+      if (!hub || !rw) return null;
+      const [a, b] = [rw.geometry.coordinates[0], rw.geometry.coordinates.at(-1)];
+      // Frame the apron (which models3d.js paints 300-760 m along the runway, on the terminal's side), looking
+      // up the runway and a little toward the apron, so the take-off runs away through the picture.
+      const mLat = 110540, mLng = 111320 * Math.cos((a[1] * Math.PI) / 180);
+      const d = [(b[0] - a[0]) * mLng, (b[1] - a[1]) * mLat], len = Math.hypot(d[0], d[1]);
+      const dir = [d[0] / len, d[1] / len], right = [dir[1], -dir[0]];
+      const h = hub.geometry.coordinates;
+      const side = ((h[0] - a[0]) * mLng) * right[0] + ((h[1] - a[1]) * mLat) * right[1] < 0 ? -1 : 1;
+      const at = (u, v) => [a[0] + (dir[0] * u + right[0] * v * side) / mLng, a[1] + (dir[1] * u + right[1] * v * side) / mLat];
+      const view = { ...p.view, center: at(430, 110), bearing: (Math.atan2(dir[0], dir[1]) * 180) / Math.PI + side * 32 };
+      return { ...p, view, center: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], radius: 0.07, runway: [a, b], item: hub };
+    }
+    const f = nearest(p.kind, p.at);
+    if (!f) return null;
+    const c = p.type === 'ship' ? p.dock : f.geometry.coordinates;
+    return { ...p, center: c, radius: p.type === 'wind' ? 0.05 : 0.04, item: f };
+  }).filter(Boolean);
+}
+// The 3D-view framing for a plan item that has models, if any.
+function modelView(f) {
+  if (!modelPlaces) return null;
+  const p = modelPlaces.find((m) => (m.type === 'rail' ? f.properties.name === m.name : m.item === f));
+  return p?.view ? { center: p.view.center ?? p.center, zoom: p.view.zoom, bearing: p.view.bearing, pitch: p.view.pitch } : null;
+}
+function maybeLoadModels() {
+  if (maybeLoadModels.started || map.getZoom() < 12.5 || !plan) return;
+  modelPlaces ??= resolveModelPlaces();
+  const c = map.getCenter();
+  if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
+  maybeLoadModels.started = true;
+  import('./models3d.js?v=20261116i')
+    .then((m) => {
+      m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
+      // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station
+      // and train. Up close, that one name steps aside.
+      map.setPaintProperty('labels-lines', 'text-opacity', ['step', ['zoom'], 1, 16.5, ['case', ['==', ['get', 'name'], MODEL_SITE.line], 0, 1]]);
+    })
+    .catch((e) => console.warn('3D models not loaded:', e));
+}
+
+// Flow pulses along the national routes (slow, and off for reduced motion). Each step restyles the line, and
+// that makes the whole map redraw 60 times a second for as long as the steps keep coming. So the pulses run
+// while the map is in use and for PULSE_REST after the last move or touch, then rest until the next one: a
+// map left open on a table stops drawing (and stops draining the phone).
+const PULSE_REST = 8000; // ms
 function animate3D() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const seq = [[0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0], [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2], [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5]];
-  let flowStep = -1;
+  let flowStep = -1, until = 0, running = false;
   const tick = (ts) => {
+    if (performance.now() > until) return (running = false);
     requestAnimationFrame(tick);
     if (document.hidden) return;
     const s = Math.floor(ts / 110) % seq.length;
@@ -3244,7 +3454,15 @@ function animate3D() {
       flowStep = s;
     }
   };
-  requestAnimationFrame(tick);
+  const wake = () => {
+    until = performance.now() + PULSE_REST;
+    if (running) return;
+    running = true;
+    requestAnimationFrame(tick);
+  };
+  map.on('move', wake);
+  for (const ev of ['pointerdown', 'pointermove', 'wheel', 'touchstart']) map.getCanvasContainer().addEventListener(ev, wake, { passive: true });
+  wake();
 }
 
 // "3D view": tilt over the real terrain and slowly circle the place until the map is touched.
@@ -3256,7 +3474,9 @@ function orbit3D(f) {
   const big = ['airportHub', 'airportNew'].includes(f.properties.kind);
   if (!state.terrain) toggleTerrain();
   clearPadding();
-  map.flyTo({ center, zoom: big ? 14 : 15, pitch: 62, bearing: map.getBearing() - 30, duration: 2600, essential: true });
+  modelPlaces ??= plan ? resolveModelPlaces() : null;
+  const site = modelView(f);
+  map.flyTo({ center: site?.center ?? center, zoom: site?.zoom ?? (big ? 14 : 15), pitch: site?.pitch ?? 62, bearing: site?.bearing ?? map.getBearing() - 30, duration: 2600, essential: true });
   const spin = () => map.easeTo({ bearing: map.getBearing() + 90, duration: 24000, easing: (x) => x, essential: true });
   map.once('moveend', () => {
     spin();
