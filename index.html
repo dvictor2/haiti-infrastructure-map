@@ -31,7 +31,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
-    <link rel="stylesheet" href="style.css?v=20261116i" />
+    <link rel="stylesheet" href="style.css?v=20261117b" />
   </head>
   <body>
     <div id="map" aria-label="Map of Haiti"></div>
@@ -96,6 +96,13 @@
             <div id="deptCities"></div>
             <div id="deptSlot"></div>
             <div id="deptCard"></div>
+          </div>
+
+          <div class="block" id="groupsBlock">
+            <div class="block-head">
+              <h2 data-i18n="h.browse">Find by type</h2>
+            </div>
+            <div class="depts" id="groups"></div>
           </div>
 
           <div class="block">
@@ -186,6 +193,6 @@
     <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
     <!-- three.js, only fetched when the 3D models are needed (zoomed in close near a modelled place) -->
     <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }</script>
-    <script type="module" src="app.js?v=20261117a"></script>
+    <script type="module" src="app.js?v=20261117b"></script>
   </body>
 </html>

@@ -745,3 +745,9 @@ body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
 @media (max-width: 760px) {
   .lang-row button { font-size: 13px; padding: 8px 3px; }
 }
+
+/* "Find by type" buttons: coloured like the things they list, with a count. */
+.chip.type-chip { border-color: color-mix(in srgb, var(--c) 55%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.chip.type-chip:hover { background: color-mix(in srgb, var(--c) 20%, transparent); }
+.chip.type-chip svg { color: var(--c); }
+.chip.type-chip small { margin-left: 5px; opacity: 0.6; font-weight: 500; }

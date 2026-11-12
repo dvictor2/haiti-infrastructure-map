@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261116i';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117b';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -1278,6 +1278,7 @@ function buildPanel() {
   $('#depts').innerHTML = names.map((n) => `<button class="chip dept-chip" data-d="${esc(n)}">${ico('mapf')}${esc(n)}</button>`).join('');
   $('#depts').querySelectorAll('.chip').forEach((c) => (c.onclick = () => (state.dept === c.dataset.d ? closeDept() : setDept(c.dataset.d))));
   $('#clearDept').onclick = closeDept;
+  renderGroups();
 
   $('#localAlways').onchange = (e) => {
     state.localAlways = e.target.checked;
@@ -1497,6 +1498,14 @@ function renderLayers() {
 }
 
 // An open department is its own step in the history: Back (button or phone) closes it.
+// The "Find by type" buttons. Inside an open department they list only that department's places.
+function renderGroups() {
+  const box = $('#groups');
+  if (!box || !plan) return;
+  const d = state.dept;
+  box.innerHTML = GROUPS.map((g) => [g, groupFeats(g, d).length]).filter(([, n]) => n).map(([g, n]) => `<button class="chip type-chip" data-g="${g.k}" style="--c:${groupColor(g)}">${ico(g.icon)}${esc(t(`grp.${g.k}`))}<small>${n}</small></button>`).join('');
+  box.querySelectorAll('.chip').forEach((b) => (b.onclick = () => openPage(`coll:g-${b.dataset.g}${d ? `@${d}` : ''}`)));
+}
 function closeDept() {
   if (history.state?.dept) {
     closeDept.pending = true;
@@ -1525,6 +1534,7 @@ function setDept(name, { move = true, fromBack = false } = {}) {
   if (!name) setDept.saved = null;
   state.dept = name;
   applyFilters();
+  renderGroups();
   $('#depts').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.d === name));
   $('#depts').classList.toggle('compact', !!name);
   $('#deptBack').hidden = !name;
@@ -1664,6 +1674,7 @@ function changeLang(code) {
   $('#popHint').textContent = t('dev.popHint', { n: fmtPeople(popData.total) });
   renderStats();
   renderLayers();
+  renderGroups();
   if (state.dept) setDept(state.dept, { move: false });
   if (state.selected && byId.has(state.selected)) renderDetail(byId.get(state.selected));
   if (state.selected && devById.has(state.selected)) renderDevDetail(devById.get(state.selected));
@@ -2327,10 +2338,41 @@ const backBtn = (id = 'detailClose') => `<button class="back-btn" id="${id}">${I
 
 // ---------- Lists ----------
 const ISLAND_RX = /vache|cayemite|tortue|gonave/;
+// "Find by type": every main kind of place, in the plan and in today's infrastructure, as one list each
+// (like a department's towns). `plan`: plan categories; `dev`: development kinds, in the order they are listed.
+const GROUPS = [
+  { k: 'airports', icon: 'plane', theme: 'air', dev: ['airportIntl', 'airportHub', 'airportNew', 'airportUpgrade', 'airfield'] },
+  { k: 'ports', icon: 'anchor', cat: 'terminal', dev: ['portHub', 'port', 'dryPort'], plan: ['terminal'] },
+  { k: 'stations', icon: 'station', cat: 'station', plan: ['station'] },
+  { k: 'cities', icon: 'city', cat: 'city', plan: ['city', 'town'] },
+  { k: 'hospitals', icon: 'hospital', theme: 'health', dev: ['healthGap', 'hospital'] },
+  { k: 'universities', icon: 'people', theme: 'connectivity', dev: ['university'] },
+  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam'] },
+  { k: 'water', icon: 'drop', theme: 'water', dev: ['waterPlant', 'sewagePlant'] },
+  { k: 'bridges', icon: 'bridge', cat: 'bridge', plan: ['bridge', 'rivercross'] },
+  { k: 'tolls', icon: 'coin', cat: 'toll', plan: ['toll'] },
+  { k: 'borders', icon: 'flag', theme: 'economy', dev: ['borderZone'] },
+  { k: 'security', icon: 'shield', theme: 'strategic', dev: ['securityPost', 'coastGuard', 'defenceBase'] },
+  { k: 'farming', icon: 'leaf', theme: 'agri', dev: ['agriHub', 'researchAgri'] },
+];
+const groupColor = (g) => (g.cat ? CATS[g.cat].color : DEV_THEMES[g.theme]);
+function groupFeats(g, dept) {
+  const order = [...(g.plan ?? []), ...(g.dev ?? [])];
+  const rank = (f) => order.indexOf(f.properties.category ?? f.properties.kind);
+  const people = (f) => stats?.places[f.properties.id]?.p5 ?? 0;
+  const feats = [
+    ...plan.features.filter((f) => g.plan?.includes(f.properties.category)),
+    ...(dev?.features ?? []).filter((f) => g.dev?.includes(f.properties.kind) && (f.properties.name || f.properties.status === 'proposed')),
+  ].filter((f) => !dept || f.properties.dept === dept);
+  const name = (f) => (devById.has(f.properties.id) ? devName(f.properties) : displayName(f.properties));
+  return feats.sort((a, b) => rank(a) - rank(b) || people(b) - people(a) || name(a).localeCompare(name(b)));
+}
 function collSet(key) {
   const [k, dept] = key.split('@');
   const cat = (f) => f.properties.category;
   let feats;
+  const g = GROUPS.find((x) => k === `g-${x.k}`);
+  if (g) return groupFeats(g, dept);
   if (k === 'trunks') feats = plan.features.filter((f) => ['corridor', 'trunk'].includes(cat(f)));
   else if (k === 'rings') feats = plan.features.filter((f) => cat(f) === 'ring');
   else if (k === 'stations') feats = plan.features.filter((f) => cat(f) === 'station');
@@ -2341,10 +2383,23 @@ function collSet(key) {
 }
 function collText(key) {
   const [k, dept] = key.split('@');
+  if (k.startsWith('g-')) return { title: dept ? `${t(`grp.${k.slice(2)}`)} · ${dept}` : t(`grp.${k.slice(2)}`), note: '' };
   const named = ['trunks', 'rings', 'stations', 'islands'].includes(k);
   const c = k.replace(/^cat-/, '');
   const title = named ? t(`coll.${k}`) : catLabel(c);
   return { title: dept ? `${title} · ${dept}` : title, note: named ? t(`coll.${k}.note`) : catHint(c) };
+}
+// A long "Find by type" list is split by department, in the order of the department buttons.
+function collListHTML(key, feats) {
+  if (!key.startsWith('g-') || key.includes('@') || feats.length <= 15) return `<ul class="list" style="margin-top:14px">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
+  const by = new Map();
+  for (const f of feats) {
+    const d = f.properties.dept ?? '';
+    if (!by.has(d)) by.set(d, []);
+    by.get(d).push(f);
+  }
+  const names = [...by.keys()].sort((a, b) => (!a) - (!b) || a.localeCompare(b));
+  return names.map((d) => `<p class="sub-head" style="margin-top:14px">${esc(d || t('grp.noDept'))} · ${by.get(d).length}</p><ul class="list">${by.get(d).map((f) => itemHTML(f)).join('')}</ul>`).join('');
 }
 const PAGES = {
   coll: {
@@ -2355,11 +2410,12 @@ const PAGES = {
       return `<h2>${esc(title)}</h2>
         <p class="sub">${t('coll.count', { n: feats.length })}${km ? ` · ${fmtKm(km)}` : ''}</p>
         ${note ? `<p class="note">${esc(note)}</p>` : ''}
-        <ul class="list" style="margin-top:14px">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
+        ${collListHTML(key, feats)}`;
     },
     wire(box, key, move) {
       const feats = collSet(key);
-      setHL(feats);
+      const g = GROUPS.find((x) => key.split('@')[0] === `g-${x.k}`);
+      setHL(feats, g && groupColor(g));
       if (move) fitFeats(feats);
       box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
     },
@@ -3425,7 +3481,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261116i')
+  import('./models3d.js?v=20261117b')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station
