@@ -1,0 +1,27 @@
+{
+  "about": "Mineral and energy potential named in: Bureau des Mines et de l'Énergie (BME), Notice explicative de la carte du potentiel minier et énergétique d'Haïti, March 2018. Facts only (names, quantities, grades). The notice describes places in words (e.g. '3 km south-east of Camp-Coq'); positions here are placed from those descriptions, cross-checked with the USGS Mineral Resources Data System where it agrees, and are approximate.",
+  "sites": [
+    { "kind": "gold", "name": "Grand Bois", "at": [-72.413, 19.613], "grade": "deposit", "qty": "4.73 Mt · 2.23 g/t Au · 14.9 g/t Ag", "oz": 340000 },
+    { "kind": "gold", "name": "Morne Bossa", "at": [-72.13, 19.69], "grade": "deposit", "qty": "2.2 Mt · 1.84 g/t Au · 15 g/t Ag", "oz": 135000 },
+    { "kind": "gold", "name": "Faille B", "at": [-71.975, 19.584], "grade": "deposit", "qty": "1.1 Mt · 2.4 g/t Au", "oz": 85000 },
+    { "kind": "gold", "name": "Mont-Organisé", "at": [-71.878, 19.448], "grade": "showing" },
+    { "kind": "copper", "name": "Mémé", "at": [-72.751, 19.577], "grade": "deposit", "qty": "≈2 Mt · 2% Cu · 2 g/t Au", "past": "1964–1971" },
+    { "kind": "copper", "name": "Douvray", "at": [-71.9, 19.555], "grade": "deposit", "qty": "86 Mt · 0.53% Cu" },
+    { "kind": "copper", "name": "Blondin", "at": [-71.889, 19.556], "grade": "deposit", "qty": "50 Mt · 0.5% Cu" },
+    { "kind": "copper", "name": "Vallières", "at": [-71.92, 19.43], "grade": "deposit", "qty": "50 Mt · 0.5% Cu" },
+    { "kind": "copper", "name": "Casséus · Brésillac · Boucan Grandeur", "at": [-72.793, 19.632], "grade": "showing", "qty": "≈6 Mt" },
+    { "kind": "copper", "name": "Vert de Gris (Jean-Rabel)", "at": [-73.198, 19.799], "grade": "showing", "qty": "Cu · Mo · Ag · Au" },
+    { "kind": "bauxite", "name": "Plateau de Rochelois", "at": [-73.17, 18.36], "grade": "deposit", "qty": "10 Mt · 48% Al₂O₃", "past": "1957–1982" },
+    { "kind": "bauxite", "name": "Beaumont", "at": [-73.966, 18.484], "grade": "showing", "qty": "1 Mt · 48% Al₂O₃" },
+    { "kind": "bauxite", "name": "Savane Zombi (Thiotte)", "at": [-71.816, 18.3], "grade": "showing", "qty": "8 Mt · 48% Al₂O₃" },
+    { "kind": "limestonePure", "name": "Paillant", "at": [-73.09, 18.35], "grade": "deposit", "qty": "> 140 Mt · 98% CaCO₃" },
+    { "kind": "limestonePure", "name": "Calebassier · Chalon", "at": [-73.05, 18.42], "grade": "deposit", "qty": "> 20 Mt · 98% CaCO₃" },
+    { "kind": "pozzolan", "name": "La Vigie", "at": [-72.33, 18.82], "grade": "deposit" },
+    { "kind": "pozzolan", "name": "Ka Elie", "at": [-72.09, 18.74], "grade": "showing" },
+    { "kind": "lignite", "name": "Maïssade", "at": [-72.2, 19.24], "grade": "deposit", "qty": "8.7 Mt · 1,900 kcal/kg", "mw": 40, "theme": "energy" },
+    { "kind": "hotSpring", "name": "Los Posos", "at": [-71.703, 19.132], "grade": "deposit", "qty": "31.5–42.7 °C", "theme": "water" },
+    { "kind": "hotSpring", "name": "Eaux de Boynes", "at": [-72.82, 19.6], "grade": "deposit", "qty": "≈50 °C", "theme": "water" },
+    { "kind": "hotSpring", "name": "Sources Puantes (Cul-de-Sac)", "at": [-72.13, 18.62], "grade": "deposit", "qty": "30–40 °C", "theme": "water" },
+    { "kind": "hotSpring", "name": "Dame-Marie · Anse-d'Hainault", "at": [-74.35, 18.52], "grade": "deposit", "qty": "≈40 °C", "theme": "water" }
+  ]
+}

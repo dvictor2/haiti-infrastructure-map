@@ -1,5 +1,5 @@
-import { DEV } from './i18n-dev.js?v=20261117b';
-import { UX } from './i18n-ux.js?v=20261117b';
+import { DEV } from './i18n-dev.js?v=20261117c';
+import { UX } from './i18n-ux.js?v=20261117c';
 
 // Interface translations. Place and route names from the plan are proper names and stay as written.
 // Languages: the five most spoken in the Americas, including Haitian Creole.
@@ -31,6 +31,7 @@ const S = {
     'grp.hospitals': 'Hospitals',
     'grp.universities': 'Universities',
     'grp.energy': 'Energy',
+    'grp.minerals': 'Minerals',
     'grp.water': 'Water & sanitation',
     'grp.bridges': 'Bridges',
     'grp.tolls': 'Toll plazas',
@@ -151,6 +152,7 @@ const S = {
     'grp.hospitals': 'Hospitales',
     'grp.universities': 'Universidades',
     'grp.energy': 'Energía',
+    'grp.minerals': 'Minerales',
     'grp.water': 'Agua y saneamiento',
     'grp.bridges': 'Puentes',
     'grp.tolls': 'Peajes',
@@ -271,6 +273,7 @@ const S = {
     'grp.hospitals': 'Hospitais',
     'grp.universities': 'Universidades',
     'grp.energy': 'Energia',
+    'grp.minerals': 'Minerais',
     'grp.water': 'Água e saneamento',
     'grp.bridges': 'Pontes',
     'grp.tolls': 'Pedágios',
@@ -391,6 +394,7 @@ const S = {
     'grp.hospitals': 'Hôpitaux',
     'grp.universities': 'Universités',
     'grp.energy': 'Énergie',
+    'grp.minerals': 'Minerais',
     'grp.water': 'Eau et assainissement',
     'grp.bridges': 'Ponts',
     'grp.tolls': 'Péages',
@@ -511,6 +515,7 @@ const S = {
     'grp.hospitals': 'Lopital',
     'grp.universities': 'Inivèsite',
     'grp.energy': 'Enèji',
+    'grp.minerals': 'Minrè',
     'grp.water': 'Dlo ak asenisman',
     'grp.bridges': 'Pon',
     'grp.tolls': 'Peyaj',

@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117b';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117c';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -152,7 +152,7 @@ const state = {
   rail: true,
   tab: 'plan',
   devThemes: new Set(),
-  devStatus: new Set(['proposed']), // Existing starts off: open data can mislead (e.g. water kiosks)
+  devStatus: new Set(['proposed', 'potential']), // Existing starts off: open data can mislead (e.g. water kiosks)
   pop: false,
   page: null, // open page in the panel: 'coll:<key>', 'trip' or 'numbers'
   trip: { from: null, to: null },
@@ -400,7 +400,8 @@ function applyFilters() {
 // ---------------------------------------------------------------------------
 // Load
 // ---------------------------------------------------------------------------
-const getJSON = (u) => fetch(u).then((r) => r.json());
+// The data files carry the release version too, so a phone never mixes new code with old data.
+const getJSON = (u) => fetch(`${u}?v=20261117c`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -462,7 +463,7 @@ map.on('load', async () => {
   addIconLayers();
   addModels();
 
-  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['==', ['get', 'status'], 'proposed'], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } }, 'labels-local');
+  map.addLayer({ id: 'dev-labels', type: 'symbol', source: 'dev', minzoom: 9.2, filter: ['all', ['in', ['get', 'status'], ['literal', ['proposed', 'potential']]], isPoint], layout: { 'text-field': devLabelExpr(), 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-max-width': 10, 'text-optional': true }, paint: { 'text-color': devColor, 'text-halo-color': '#05070a', 'text-halo-width': 1.5 } }, 'labels-local');
   map.addLayer({ id: 'rivers-labels', type: 'symbol', source: 'rivers', minzoom: 9.5, layout: { 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 10.5, 'symbol-spacing': 500 }, paint: { 'text-color': '#A5F3FC', 'text-halo-color': '#05070a', 'text-halo-width': 1.3 } }, 'labels-local');
   if (state.terrain) map.setTerrain({ source: 'dem', exaggeration: reliefAt(map.getZoom()) });
   map.on('zoom', applyRelief);
@@ -565,7 +566,7 @@ const ICO = {
 };
 const ico = (name) => (ICO[name] ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[name]}</svg>` : '');
 const CAT_ICON = { corridor: 'train', trunk: 'train', bridge: 'bridge', ferry: 'ship', ring: 'ring', urban: 'bus', feeder: 'road', station: 'station', terminal: 'anchor', rivercross: 'bridge', toll: 'coin', water: 'drop', border: 'flag', city: 'city', town: 'town', site: 'shield' };
-const THEME_ICON = { energy: 'bolt', water: 'drop', sanitation: 'pipe', agri: 'leaf', housing: 'home', economy: 'briefcase', connectivity: 'wifi', health: 'hospital', resilience: 'alert', environment: 'tree', strategic: 'shield', air: 'plane' };
+const THEME_ICON = { energy: 'bolt', water: 'drop', sanitation: 'pipe', agri: 'leaf', housing: 'home', economy: 'briefcase', connectivity: 'wifi', health: 'hospital', resilience: 'alert', environment: 'tree', strategic: 'shield', air: 'plane', mining: 'mountain' };
 const ENG_ICON = { surface: 'road', mountain: 'mountain', viaduct: 'bridge', tunnel: 'tunnel' };
 
 class ButtonsControl {
@@ -738,7 +739,7 @@ function wireMap() {
       tip.hidden = false;
     } else if (id && devById.has(id)) {
       const p = devById.get(id).properties;
-      tip.innerHTML = `${esc(devName(p))}<small>${esc(t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'))}</small>`;
+      tip.innerHTML = `${esc(devName(p))}<small>${esc(statusLabel(p))}</small>`;
       tip.style.left = `${e.point.x}px`;
       tip.style.top = `${e.point.y}px`;
       tip.hidden = false;
@@ -1312,7 +1313,7 @@ function buildPanel() {
   document.querySelectorAll('.status-chips .chip').forEach((c) => (c.onclick = () => {
     const st = c.dataset.status;
     state.devStatus.has(st) ? state.devStatus.delete(st) : state.devStatus.add(st);
-    if (!state.devStatus.size) state.devStatus.add(st === 'existing' ? 'proposed' : 'existing');
+    if (!state.devStatus.size) state.devStatus.add(st === 'proposed' ? 'existing' : 'proposed');
     applyDevFilters();
     renderDevPanel();
   }));
@@ -1713,6 +1714,7 @@ const DEV_THEMES = {
   resilience: '#EF4444',
   environment: '#22C55E',
   strategic: '#94A3B8',
+  mining: '#D97706',
 };
 const devColor = ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff'];
 const MINOR_KINDS = ['clinic', 'waterKiosk', 'waterTower', 'substation', 'university'];
@@ -1738,7 +1740,7 @@ function addDevLayers() {
     'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)', 0.15, 'rgba(250,204,21,0.35)', 0.4, 'rgba(245,158,11,0.6)', 0.7, 'rgba(239,68,68,0.75)', 1, 'rgba(255,255,255,0.9)'],
     'heatmap-opacity': 0.75,
   } }, before);
-  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 0.3] } }, before);
+  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 'mineralBelt', 0.13, 0.3] } }, before);
   const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
   map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal', 'runway']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'kind'], 'runway', 2.5, 0.8], 12, ['match', ['get', 'kind'], 'runway', 9, 2.2], 15, ['match', ['get', 'kind'], 'runway', 40, 3]] } });
   map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
@@ -1748,9 +1750,12 @@ function addDevLayers() {
   map.addLayer({ id: 'backbone-fiber', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: ['any', corridor, ['all', ['==', ['get', 'category'], 'ring'], ['==', ['get', 'tier'], 'national']]], paint: { 'line-color': DEV_THEMES.connectivity, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, -3, 12, -7], 'line-dasharray': [1, 1.5] } });
   const pt = isPoint;
   const proposed = ['==', ['get', 'status'], 'proposed'];
+  const potential = ['==', ['get', 'status'], 'potential'];
+  // Proposed: solid colour, white ring. Existing: dark, coloured ring. Potential (government / studies): see-through colour.
   const circlePaint = {
-    'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['case', proposed, 4.5, 2.5], 12, ['case', proposed, 9, 5.5]],
-    'circle-color': ['case', proposed, devColor, '#0d1117'],
+    'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['case', proposed, 4.5, potential, 4, 2.5], 12, ['case', proposed, 9, potential, 8, 5.5]],
+    'circle-color': ['case', proposed, devColor, potential, devColor, '#0d1117'],
+    'circle-opacity': ['case', potential, 0.35, 1],
     'circle-stroke-color': ['case', proposed, '#ffffff', devColor],
     'circle-stroke-width': ['case', proposed, 2, 2],
   };
@@ -1792,7 +1797,7 @@ function setTab(tab) {
   syncPage();
   if (tab === 'dev' && !setTab.opened) {
     setTab.opened = true;
-    if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing', 'air'].forEach((k) => state.devThemes.add(k));
+    if (!state.devThemes.size) ['energy', 'water', 'agri', 'housing', 'air', 'mining'].forEach((k) => state.devThemes.add(k));
     applyDevFilters();
   }
   renderDevPanel();
@@ -1805,7 +1810,7 @@ function renderDevPanel() {
   for (const f of dev.features) {
     const p = f.properties;
     if (p.kind === 'protectedLabel') continue;
-    counts[p.theme] ??= { existing: 0, proposed: 0 };
+    counts[p.theme] ??= { existing: 0, proposed: 0, potential: 0 };
     counts[p.theme][p.status]++;
   }
   counts.energy.proposed += 1; // the power backbone
@@ -1818,11 +1823,11 @@ function renderDevPanel() {
   $('#devThemes').innerHTML = Object.entries(DEV_THEMES).map(([k, color]) => {
     const [name, hint] = t(`theme.${k}`);
     const on = state.devThemes.has(k);
-    const c = counts[k] ?? { existing: 0, proposed: 0 };
+    const c = counts[k] ?? { existing: 0, proposed: 0, potential: 0 };
     return `<li class="layer ${on ? '' : 'off'}" data-k="${k}" role="switch" tabindex="0" aria-checked="${on}">
       <span class="swatch theme-ico" style="--c:${color}">${ico(THEME_ICON[k])}</span>
       <span class="layer-name">${esc(name)}<small>${esc(hint)}</small></span>
-      <span class="layer-meta">${c.existing ? `${fmtPeople(c.existing)} · ` : ''}${c.proposed ? `<b style="color:${color}">${c.proposed}</b>` : ''}</span>
+      <span class="layer-meta">${c.existing ? `${fmtPeople(c.existing)} · ` : ''}${c.proposed ? `<b style="color:${color}">${c.proposed}</b>` : ''}${c.potential ? `${c.proposed ? ' · ' : ''}<i class="pot-count" style="--c:${color}">${c.potential}</i>` : ''}</span>
       <span class="switch"></span></li>`;
   }).join('');
   $('#devThemes').querySelectorAll('.layer').forEach((li) => {
@@ -1838,14 +1843,16 @@ function renderDevPanel() {
   $('#methodBody').innerHTML = Object.keys(DEV_THEMES).map((k) => `<p><b>${esc(t(`theme.${k}`)[0])}.</b> ${esc(t(`method.${k}`))}</p>`).join('');
 }
 
+const statusLabel = (p) => t(`dev.${p.status}`);
 function devName(p) {
+  if (p.status === 'potential') return `${t(`kind.${p.kind}`)} · ${p.name ?? p.place ?? ''}`;
   if (p.status === 'proposed') return p.place ? `${t(`kind.${p.kind}`)} · ${p.place}` : t(`kind.${p.kind}`);
   return p.name ?? t(`kind.${p.kind}`);
 }
 
 function devItemHTML(f) {
   const p = f.properties;
-  const sub = [t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing'), t(`theme.${p.theme}`)[0], p.dept].filter(Boolean).join(' · ');
+  const sub = [statusLabel(p), t(`theme.${p.theme}`)[0], p.dept].filter(Boolean).join(' · ');
   return `<li><button class="item" data-id="${p.id}" style="--c:${DEV_THEMES[p.theme]}">
       <span class="ico-c">${ico(THEME_ICON[p.theme])}</span>
       <span class="t"><b>${esc(devName(p))}</b><small>${esc(sub)}</small></span>
@@ -1853,6 +1860,15 @@ function devItemHTML(f) {
 }
 
 function devWhy(p) {
+  if (p.status === 'potential') {
+    if (p.kind === 'mineralBelt') return t('why.mineralBelt', { place: p.place, km2: p.km2?.toLocaleString(locale()) });
+    if (p.src === 'phe') return t('why.hydroPotential');
+    return t(p.grade === 'showing' ? 'why.showing' : 'why.deposit');
+  }
+  if (p.basis) return devWhyBase(p) + t(`why.basis.${p.basis}`);
+  return devWhyBase(p);
+}
+function devWhyBase(p) {
   if (p.status === 'existing') {
     if (p.approx) return t('dev.approx');
     if (p.kind === 'fault') return t('why.fault', { slip: p.slip ?? '—' });
@@ -1882,13 +1898,22 @@ function devWhy(p) {
   return t(`why.${p.kind}`, v);
 }
 
+// Size and history of a deposit named by the BME (numbers and units as published).
+const mineFacts = (p) => [
+  ...(p.qty ? [[p.qty, 'fact.reserves']] : []),
+  ...(p.oz ? [[`${p.oz.toLocaleString(locale())} oz`, 'fact.goldOz']] : []),
+  ...(p.past ? [[p.past, 'fact.mined']] : []),
+];
 function devFacts(p) {
   const km = (v) => (v == null ? '—' : `${v.toLocaleString(locale())} km`);
   const m = (v) => (v == null ? '—' : `${Math.round(v).toLocaleString(locale())} m`);
   const F = {
     solar: [['≈50 MW', 'fact.capacity'], [km(p.rail), 'fact.toCorridor'], [fmtPeople(p.load), 'fact.people']],
-    wind: [[m(p.elev), 'fact.elevation']],
-    hydro: [[m(p.head), 'fact.drop'], [km(p.riverKm), 'fact.river']],
+    wind: [[m(p.elev), 'fact.elevation'], ...(p.mw ? [[`≈${p.mw} MW`, 'fact.capacity']] : [])],
+    hydro: p.status === 'potential' ? (p.count ? [[String(p.count), 'fact.sitesHere']] : []) : [[m(p.head), 'fact.drop'], [km(p.riverKm), 'fact.river'], ...(p.mw ? [[`≈${p.mw} MW`, 'fact.capacity']] : [])],
+    gold: mineFacts(p), copper: mineFacts(p), bauxite: mineFacts(p), limestonePure: mineFacts(p), pozzolan: mineFacts(p),
+    lignite: [...mineFacts(p), [`≈${p.mw} MW`, 'fact.capacity']],
+    hotSpring: p.qty ? [[p.qty, 'fact.temp']] : [],
     microgrid: [[fmtPeople(p.people), 'fact.people']],
     waterPlant: [[fmtPeople(p.serves), 'fact.serves'], [m(p.head), 'fact.head'], [km(p.km), 'fact.distance']],
     sewagePlant: [[fmtPeople(p.serves), 'fact.serves'], [m(p.drop), 'fact.drop'], [km(p.km), 'fact.distance']],
@@ -1968,7 +1993,7 @@ function renderDevDetail(f) {
     <div class="detail-top">${backBtn()}<span class="pill" style="--c:${color}">${ico(THEME_ICON[p.theme])}${esc(t(`kind.${p.kind}`))}</span></div>
     <h2>${esc(devName(p))}</h2>
     <div class="badges">
-      <span class="badge ${p.status}">${t(p.status === 'proposed' ? 'dev.proposed' : 'dev.existing')}</span>
+      <span class="badge ${p.status}">${statusLabel(p)}</span>
       <span class="badge">${esc(t(`theme.${p.theme}`)[0])}</span>
     </div>
     <p class="note">${esc(devWhy(p))}</p>
@@ -1980,6 +2005,7 @@ function renderDevDetail(f) {
       <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
     </div>
     ${p.status === 'proposed' ? `<p class="source">${esc(t('dev.screening'))}</p>` : ''}
+    ${p.status === 'potential' ? `<p class="source">${esc(t('dev.potentialNote'))}</p>` : ''}
     <p class="source">${esc(t('dev.source', { src: p.status === 'proposed' ? t('src.rules') : t(`src.${p.src}`) }))}</p>`;
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
@@ -2347,7 +2373,8 @@ const GROUPS = [
   { k: 'cities', icon: 'city', cat: 'city', plan: ['city', 'town'] },
   { k: 'hospitals', icon: 'hospital', theme: 'health', dev: ['healthGap', 'hospital'] },
   { k: 'universities', icon: 'people', theme: 'connectivity', dev: ['university'] },
-  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam'] },
+  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam', 'lignite'] },
+  { k: 'minerals', icon: 'mountain', theme: 'mining', dev: ['gold', 'copper', 'bauxite', 'limestonePure', 'pozzolan', 'lignite', 'hotSpring', 'mineralBelt'] },
   { k: 'water', icon: 'drop', theme: 'water', dev: ['waterPlant', 'sewagePlant'] },
   { k: 'bridges', icon: 'bridge', cat: 'bridge', plan: ['bridge', 'rivercross'] },
   { k: 'tolls', icon: 'coin', cat: 'toll', plan: ['toll'] },
@@ -2362,7 +2389,7 @@ function groupFeats(g, dept) {
   const people = (f) => stats?.places[f.properties.id]?.p5 ?? 0;
   const feats = [
     ...plan.features.filter((f) => g.plan?.includes(f.properties.category)),
-    ...(dev?.features ?? []).filter((f) => g.dev?.includes(f.properties.kind) && (f.properties.name || f.properties.status === 'proposed')),
+    ...(dev?.features ?? []).filter((f) => g.dev?.includes(f.properties.kind) && (f.properties.name || f.properties.status !== 'existing')),
   ].filter((f) => !dept || f.properties.dept === dept);
   const name = (f) => (devById.has(f.properties.id) ? devName(f.properties) : displayName(f.properties));
   return feats.sort((a, b) => rank(a) - rank(b) || people(b) - people(a) || name(a).localeCompare(name(b)));
@@ -2823,7 +2850,7 @@ const TOUR = [
   () => {
     setHL([]);
     state.devThemes = new Set(['energy', 'water', 'agri', 'housing']);
-    state.devStatus = new Set(['proposed']);
+    state.devStatus = new Set(['proposed', 'potential']);
     applyDevFilters();
     renderDevPanel();
     map.flyTo({ center: [-72.55, 19.2], zoom: 9.4, pitch: state.terrain ? 40 : 0, bearing: 0, padding: pad(), ...MOVE, duration: 2200 });
@@ -3282,7 +3309,7 @@ const PLAN_ICON_FILTERS = {
   'icons-plan-minor': ['all', isPoint, inCats(['toll', 'rivercross'])],
 };
 // Draws one badge on a canvas (synchronously, from the SVG path data in ICO) and registers it with the map.
-function addBadge(name, iconKey, fill, fg) {
+function addBadge(name, iconKey, fill, fg, dashed = false) {
   if (map.hasImage(name)) return;
   const S = 64, R = 28;
   const cv = document.createElement('canvas');
@@ -3294,7 +3321,10 @@ function addBadge(name, iconKey, fill, fg) {
   ctx.fill();
   ctx.lineWidth = 4;
   ctx.strokeStyle = fill === '#0d1117' ? fg : '#0d1117';
+  // Potential (identified by the government or a study): a dashed ring, so it never reads as built or proposed.
+  if (dashed) ctx.setLineDash([7, 5]);
   ctx.stroke();
+  ctx.setLineDash([]);
   const k = 1.5; // 24-unit icon → 36 px, centred
   ctx.save();
   ctx.translate(S / 2 - 12 * k, S / 2 - 12 * k);
@@ -3328,13 +3358,14 @@ function addIconLayers() {
   for (const [k, c] of Object.entries(DEV_THEMES)) {
     addBadge(`dp-${k}`, THEME_ICON[k], c, isLight(c) ? '#0d1117' : '#ffffff');
     addBadge(`de-${k}`, THEME_ICON[k], '#0d1117', c);
+    addBadge(`dv-${k}`, THEME_ICON[k], '#0d1117', c, true);
   }
   const size = PHONE.matches ? 1.15 : 1;
   const icon = (image, extra = {}) => ({ 'icon-image': image, 'icon-size': ['interpolate', ['linear'], ['zoom'], 9.5, 0.75 * size, 13, size], 'icon-allow-overlap': true, ...extra });
   const before = 'labels-lines-local';
   map.addLayer({ id: 'icons-plan-major', type: 'symbol', source: 'plan', minzoom: 9.5, filter: PLAN_ICON_FILTERS['icons-plan-major'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
   map.addLayer({ id: 'icons-plan-minor', type: 'symbol', source: 'plan', minzoom: 11, filter: PLAN_ICON_FILTERS['icons-plan-minor'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
-  const devImg = ['case', ['==', ['get', 'status'], 'proposed'], ['concat', 'dp-', ['get', 'theme']], ['concat', 'de-', ['get', 'theme']]];
+  const devImg = ['case', ['==', ['get', 'status'], 'proposed'], ['concat', 'dp-', ['get', 'theme']], ['==', ['get', 'status'], 'potential'], ['concat', 'dv-', ['get', 'theme']], ['concat', 'de-', ['get', 'theme']]];
   const pt = ['all', isPoint, ['!=', ['get', 'kind'], 'protectedLabel']];
   // Proposed sites draw above existing ones.
   map.addLayer({ id: 'icons-dev-minor', type: 'symbol', source: 'dev', minzoom: 12, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
@@ -3481,7 +3512,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117b')
+  import('./models3d.js?v=20261117c')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station

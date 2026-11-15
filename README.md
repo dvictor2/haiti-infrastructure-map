@@ -32,7 +32,10 @@ The **Development** tab shows existing infrastructure from open data (OpenStreet
 ```bash
 sh tools/fetch-sources.sh
 node tools/build-dev.mjs
+node tools/build-potential.mjs
 ```
+
+**Three kinds of item.** *Existing* is there today; *Proposed* is this plan's own screening-level idea; *Potential* is a resource identified by the government or an official study, not a proposal of this plan (dashed symbol). Potential items come from the Bureau des Mines et de l'Énergie's 2018 map and notice of Haiti's mining and energy potential (gold, copper, bauxite, pure limestone, pozzolana, lignite, hot springs; facts only, positions placed from the notice's descriptions, approximate) and from the government's hydropower potential map (PNUD / EdH / MTPTC, positions read from its grid, about ±2 km). `tools/build-potential.mjs` adds them after `build-dev.mjs` and keeps only the plan's small-hydro proposals that sit on a government hydropower site (plus the Estère, which has a feasibility study). Sources: `source/potential-bme-2018.json`, `source/hydro-potential-phe.json`.
 
 ## Plan in numbers and trips
 
@@ -73,4 +76,4 @@ Any static host works. On GitHub Pages: Settings → Pages → Deploy from a bra
 
 ## Credits
 
-Imagery © Esri, Maxar, Earthstar Geographics. Terrain: Mapzen terrain tiles on AWS Open Data. Street map: drawn in the page from OpenStreetMap data served by OpenFreeMap (© OpenStreetMap contributors, ODbL). Buildings (`data/buildings/`): © OpenStreetMap contributors, Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft; the building files are a database derived from those sources and are shared under the Open Database License (ODbL 1.0), see `data/buildings/LICENSE.md`; heights and roof colours are estimates; read with PMTiles. Department outlines: Natural Earth (public domain). Map engine: MapLibre GL JS. 3D models: three.js, models from 3DAssets.dev (CC0) and Sketchfab artists (CC BY 4.0), see `ASSET_CREDITS.md`. Fonts: OpenFreeMap, Google Fonts (Inter).
+Imagery © Esri, Maxar, Earthstar Geographics. Terrain: Mapzen terrain tiles on AWS Open Data. Street map: drawn in the page from OpenStreetMap data served by OpenFreeMap (© OpenStreetMap contributors, ODbL). Buildings (`data/buildings/`): © OpenStreetMap contributors, Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft; the building files are a database derived from those sources and are shared under the Open Database License (ODbL 1.0), see `data/buildings/LICENSE.md`; heights and roof colours are estimates; read with PMTiles. Mining and energy potential: Bureau des Mines et de l'Énergie, *Carte et notice du potentiel minier et énergétique d'Haïti* (2018), facts only; hydropower potential sites: PNUD / EdH / MTPTC map reproduced in that notice. Department outlines: Natural Earth (public domain). Map engine: MapLibre GL JS. 3D models: three.js, models from 3DAssets.dev (CC0) and Sketchfab artists (CC BY 4.0), see `ASSET_CREDITS.md`. Fonts: OpenFreeMap, Google Fonts (Inter).
