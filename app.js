@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117c';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117e';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -401,7 +401,7 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 // The data files carry the release version too, so a phone never mixes new code with old data.
-const getJSON = (u) => fetch(`${u}?v=20261117c`).then((r) => r.json());
+const getJSON = (u) => fetch(`${u}?v=20261117e`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -1716,7 +1716,41 @@ const DEV_THEMES = {
   strategic: '#94A3B8',
   mining: '#D97706',
 };
-const devColor = ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff'];
+// Minerals each get their own colour and chemical symbol (gold Au, copper Cu…), like the BME's own map,
+// so a gold deposit never looks like a copper one. Everything else takes its theme's colour and icon.
+// Shapes follow the BME map's own legend: circles for metals (with the chemical symbol), squares for building
+// and industrial materials, triangles for fossil fuels.
+const KIND_STYLE = {
+  gold: { c: '#FBBF24', sym: 'Au', shape: 'circle' },
+  copper: { c: '#EA7A3B', sym: 'Cu', shape: 'circle' },
+  goldCopper: { c: '#FBBF24', c2: '#EA7A3B', shape: 'circle' },
+  bauxite: { c: '#AAB2BF', sym: 'Al', shape: 'circle' },
+  silver: { c: '#E5E7EB', sym: 'Ag', shape: 'circle' },
+  nickel: { c: '#B7794B', sym: 'Ni', shape: 'circle' },
+  clay: { c: '#A4FC78', shape: 'square' },
+  marble: { c: '#FEBEBF', shape: 'square' },
+  limestonePure: { c: '#E39904', shape: 'square' },
+  granodiorite: { c: '#E701AA', shape: 'square' },
+  aggregate: { c: '#C88380', shape: 'square' },
+  gypsum: { c: '#A9A75C', shape: 'square' },
+  cement: { c: '#C1E7FB', shape: 'square' },
+  phosphate: { c: '#A855F7', shape: 'square' },
+  pozzolan: { c: '#D946EF', shape: 'square' },
+  silicaSand: { c: '#63B7F2', shape: 'square' },
+  salt: { c: '#3B82F6', shape: 'square' },
+  lignite: { c: '#22C55E', shape: 'triangle' },
+  oil: { c: '#EF4444', shape: 'triangle' },
+  tarSand: { c: '#CACF61', shape: 'triangle' },
+  oilZone: { c: '#EF4444', shape: 'triangle' },
+};
+const devColorOf = (p) => KIND_STYLE[p.kind]?.c ?? DEV_THEMES[p.theme];
+const devIco = (p) => {
+  const k = KIND_STYLE[p.kind];
+  if (!k) return ico(THEME_ICON[p.theme]);
+  const bg = k.c2 ? `linear-gradient(90deg, ${k.c} 50%, ${k.c2} 50%)` : k.c;
+  return `<i class="kshape ${k.shape}" style="background:${bg}">${k.sym ?? ''}</i>`;
+};
+const devColor = ['match', ['get', 'kind'], ...Object.entries(KIND_STYLE).flatMap(([k, v]) => [k, v.c]), ['match', ['get', 'theme'], ...Object.entries(DEV_THEMES).flat(), '#ffffff']];
 const MINOR_KINDS = ['clinic', 'waterKiosk', 'waterTower', 'substation', 'university'];
 const devLabelExpr = () => ['match', ['get', 'kind'], ...DEV_KIND_KEYS.flatMap((k) => [k, ['concat', t(`kind.${k}`), ' · ', ['coalesce', ['get', 'place'], '']]]), ['coalesce', ['get', 'place'], '']];
 const DEV_KIND_KEYS = ['securityPost', 'coastGuard', 'protectZone', 'defenceBase', 'researchAgri', 'seismicStation', 'solar', 'wind', 'hydro', 'microgrid', 'waterPlant', 'sewagePlant', 'agriHub', 'portHub', 'dryPort', 'borderZone', 'techHub', 'ruralHub', 'healthGap', 'faultCross', 'airportUpgrade', 'airportHub', 'airportNew'];
@@ -1740,10 +1774,10 @@ function addDevLayers() {
     'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)', 0.15, 'rgba(250,204,21,0.35)', 0.4, 'rgba(245,158,11,0.6)', 0.7, 'rgba(239,68,68,0.75)', 1, 'rgba(255,255,255,0.9)'],
     'heatmap-opacity': 0.75,
   } }, before);
-  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 'mineralBelt', 0.13, 0.3] } }, before);
+  map.addLayer({ id: 'dev-fill', type: 'fill', source: 'dev', filter: isPoly, paint: { 'fill-color': devColor, 'fill-opacity': ['match', ['get', 'kind'], 'floodZone', 0.42, 'mineralBelt', 0.13, 'oilZone', 0.07, 0.3] } }, before);
   const lineBase = { type: 'line', source: 'dev', layout: { 'line-join': 'round', 'line-cap': 'round' } };
   map.addLayer({ ...lineBase, id: 'dev-lines-solid', filter: ['in', ['get', 'kind'], ['literal', ['powerline', 'canal', 'runway']]], paint: { 'line-color': devColor, 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, ['match', ['get', 'kind'], 'runway', 2.5, 0.8], 12, ['match', ['get', 'kind'], 'runway', 9, 2.2], 15, ['match', ['get', 'kind'], 'runway', 40, 3]] } });
-  map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
+  map.addLayer({ ...lineBase, id: 'dev-lines-dashed', layout: { 'line-join': 'round' }, filter: ['in', ['get', 'kind'], ['literal', ['cable', 'fault', 'protected', 'oilZone']]], paint: { 'line-color': devColor, 'line-opacity': 0.9, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.4], 'line-dasharray': [2.5, 1.6] } });
   // Utility backbones laid in the same right of way as the rail + highway corridors (offset either side).
   const corridor = ['==', ['get', 'mode'], RAIL_MODE];
   map.addLayer({ id: 'backbone-power', type: 'line', source: 'plan', layout: { visibility: 'none', 'line-join': 'round' }, filter: corridor, paint: { 'line-color': DEV_THEMES.energy, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 12, 2], 'line-offset': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7], 'line-dasharray': [4, 2] } });
@@ -1845,6 +1879,7 @@ function renderDevPanel() {
 
 const statusLabel = (p) => t(`dev.${p.status}`);
 function devName(p) {
+  if (p.kind === 'oilZone') return `${t('kind.oilZone')} ${p.zone} · ${p.place}`;
   if (p.status === 'potential') return `${t(`kind.${p.kind}`)} · ${p.name ?? p.place ?? ''}`;
   if (p.status === 'proposed') return p.place ? `${t(`kind.${p.kind}`)} · ${p.place}` : t(`kind.${p.kind}`);
   return p.name ?? t(`kind.${p.kind}`);
@@ -1853,8 +1888,8 @@ function devName(p) {
 function devItemHTML(f) {
   const p = f.properties;
   const sub = [statusLabel(p), t(`theme.${p.theme}`)[0], p.dept].filter(Boolean).join(' · ');
-  return `<li><button class="item" data-id="${p.id}" style="--c:${DEV_THEMES[p.theme]}">
-      <span class="ico-c">${ico(THEME_ICON[p.theme])}</span>
+  return `<li><button class="item" data-id="${p.id}" style="--c:${devColorOf(p)}">
+      <span class="ico-c">${devIco(p)}</span>
       <span class="t"><b>${esc(devName(p))}</b><small>${esc(sub)}</small></span>
       <span class="k"></span></button></li>`;
 }
@@ -1863,6 +1898,9 @@ function devWhy(p) {
   if (p.status === 'potential') {
     if (p.kind === 'mineralBelt') return t('why.mineralBelt', { place: p.place, km2: p.km2?.toLocaleString(locale()) });
     if (p.src === 'phe') return t('why.hydroPotential');
+    if (p.kind === 'oilZone') return t('why.oilZone');
+    if (p.kind === 'oil' || p.kind === 'tarSand') return t('why.oil');
+    if (p.grade === 'mapped') return t('why.mapped');
     return t(p.grade === 'showing' ? 'why.showing' : 'why.deposit');
   }
   if (p.basis) return devWhyBase(p) + t(`why.basis.${p.basis}`);
@@ -1983,14 +2021,14 @@ function selectDev(id, { move = true } = {}) {
 
 function renderDevDetail(f) {
   const p = f.properties;
-  const color = DEV_THEMES[p.theme];
+  const color = devColorOf(p);
   const g = f.geometry;
   const c = g.type === 'Point' ? g.coordinates : [(f._bbox[0] + f._bbox[2]) / 2, (f._bbox[1] + f._bbox[3]) / 2];
   const gm = `https://www.google.com/maps/search/?api=1&query=${c[1].toFixed(5)},${c[0].toFixed(5)}`;
   const facts = devFacts(p);
   const el = $('#detail');
   el.innerHTML = `
-    <div class="detail-top">${backBtn()}<span class="pill" style="--c:${color}">${ico(THEME_ICON[p.theme])}${esc(t(`kind.${p.kind}`))}</span></div>
+    <div class="detail-top">${backBtn()}<span class="pill" style="--c:${color}">${devIco(p)}${esc(t(`kind.${p.kind}`))}</span></div>
     <h2>${esc(devName(p))}</h2>
     <div class="badges">
       <span class="badge ${p.status}">${statusLabel(p)}</span>
@@ -2137,7 +2175,7 @@ function glanceHTML(f, conns) {
       ${factHTML(conns.length, t('city.routes'), conns.length ? 'routes' : null, '', 'road')}
       ${factHTML(hosp == null ? '—' : fmtKm(hosp), t('city.hospital'), hospId ? 'hospital' : null, hospId ? `data-id="${hospId}"` : '', 'hospital')}
     </div>
-    ${planned.length ? `<p class="sub-head">${t('city.planned')}</p><div class="depts compact planned">${planned.map((d) => `<button class="chip" data-id="${d.properties.id}" style="border-color:${DEV_THEMES[d.properties.theme]}">${esc(t(`kind.${d.properties.kind}`))}</button>`).join('')}</div>` : ''}
+    ${planned.length ? `<p class="sub-head">${t('city.planned')}</p><div class="depts compact planned">${planned.map((d) => `<button class="chip" data-id="${d.properties.id}" style="border-color:${devColorOf(d.properties)}">${esc(t(`kind.${d.properties.kind}`))}</button>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -2232,7 +2270,7 @@ function addHighlightLayers() {
   map.addLayer({ ...lineL, id: 'sec-line', source: 'sec', paint: { 'line-color': ['get', 'c'], 'line-width': 6 } });
 }
 function setHL(feats = [], color) {
-  map.getSource('hl')?.setData({ type: 'FeatureCollection', features: feats.map((f) => ({ type: 'Feature', geometry: f.geometry, properties: { category: f.properties.category, c: color ?? f.properties.c ?? CATS[f.properties.category]?.color ?? '#ffffff' } })) });
+  map.getSource('hl')?.setData({ type: 'FeatureCollection', features: feats.map((f) => ({ type: 'Feature', geometry: f.geometry, properties: { category: f.properties.category, c: color ?? f.properties.c ?? CATS[f.properties.category]?.color ?? (devById.has(f.properties.id) ? devColorOf(f.properties) : null) ?? '#ffffff' } })) });
 }
 function fitFeats(feats, opts = {}) {
   const b = bboxOf(feats.flatMap((f) => flatCoords(f.geometry)));
@@ -2373,8 +2411,8 @@ const GROUPS = [
   { k: 'cities', icon: 'city', cat: 'city', plan: ['city', 'town'] },
   { k: 'hospitals', icon: 'hospital', theme: 'health', dev: ['healthGap', 'hospital'] },
   { k: 'universities', icon: 'people', theme: 'connectivity', dev: ['university'] },
-  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam', 'lignite'] },
-  { k: 'minerals', icon: 'mountain', theme: 'mining', dev: ['gold', 'copper', 'bauxite', 'limestonePure', 'pozzolan', 'lignite', 'hotSpring', 'mineralBelt'] },
+  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam', 'lignite', 'oilZone', 'oil', 'tarSand'] },
+  { k: 'minerals', icon: 'mountain', theme: 'mining', dev: ['gold', 'goldCopper', 'copper', 'silver', 'nickel', 'bauxite', 'limestonePure', 'marble', 'granodiorite', 'cement', 'clay', 'gypsum', 'pozzolan', 'silicaSand', 'aggregate', 'phosphate', 'salt', 'lignite', 'hotSpring', 'mineralBelt'] },
   { k: 'water', icon: 'drop', theme: 'water', dev: ['waterPlant', 'sewagePlant'] },
   { k: 'bridges', icon: 'bridge', cat: 'bridge', plan: ['bridge', 'rivercross'] },
   { k: 'tolls', icon: 'coin', cat: 'toll', plan: ['toll'] },
@@ -2442,7 +2480,7 @@ const PAGES = {
     wire(box, key, move) {
       const feats = collSet(key);
       const g = GROUPS.find((x) => key.split('@')[0] === `g-${x.k}`);
-      setHL(feats, g && groupColor(g));
+      setHL(feats, g && g.k !== 'minerals' ? groupColor(g) : undefined);
       if (move) fitFeats(feats);
       box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
     },
@@ -3309,7 +3347,38 @@ const PLAN_ICON_FILTERS = {
   'icons-plan-minor': ['all', isPoint, inCats(['toll', 'rivercross'])],
 };
 // Draws one badge on a canvas (synchronously, from the SVG path data in ICO) and registers it with the map.
-function addBadge(name, iconKey, fill, fg, dashed = false) {
+// Map symbol for a mineral or fuel: its shape in its colour, a dashed dark outline (potential), and the symbol.
+function addKindBadge(name, { c, c2, sym, shape }) {
+  if (map.hasImage(name)) return;
+  const S = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.beginPath();
+  if (shape === 'circle') ctx.arc(S / 2, S / 2, 25, 0, Math.PI * 2);
+  else if (shape === 'square') ctx.rect(11, 11, 42, 42);
+  else { ctx.moveTo(S / 2, 7); ctx.lineTo(S - 6, S - 10); ctx.lineTo(6, S - 10); ctx.closePath(); }
+  if (c2) {
+    const gr = ctx.createLinearGradient(7, 0, S - 7, 0);
+    gr.addColorStop(0.5, c); gr.addColorStop(0.5, c2);
+    ctx.fillStyle = gr;
+  } else ctx.fillStyle = c;
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#0d1117';
+  ctx.setLineDash([7, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (sym) {
+    ctx.fillStyle = '#0d1117';
+    ctx.font = '800 24px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(sym, S / 2, S / 2 + 1);
+  }
+  map.addImage(name, ctx.getImageData(0, 0, S, S), { pixelRatio: 2.5 });
+}
+function addBadge(name, iconKey, fill, fg, dashed = false, text = null) {
   if (map.hasImage(name)) return;
   const S = 64, R = 28;
   const cv = document.createElement('canvas');
@@ -3325,6 +3394,16 @@ function addBadge(name, iconKey, fill, fg, dashed = false) {
   if (dashed) ctx.setLineDash([7, 5]);
   ctx.stroke();
   ctx.setLineDash([]);
+  if (text) {
+    // A chemical symbol instead of a drawn icon (minerals).
+    ctx.fillStyle = fg;
+    ctx.font = `700 ${text.length > 1 ? 24 : 28}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, S / 2, S / 2 + 1);
+    map.addImage(name, ctx.getImageData(0, 0, S, S), { pixelRatio: 2.5 });
+    return;
+  }
   const k = 1.5; // 24-unit icon → 36 px, centred
   ctx.save();
   ctx.translate(S / 2 - 12 * k, S / 2 - 12 * k);
@@ -3360,12 +3439,13 @@ function addIconLayers() {
     addBadge(`de-${k}`, THEME_ICON[k], '#0d1117', c);
     addBadge(`dv-${k}`, THEME_ICON[k], '#0d1117', c, true);
   }
+  for (const [k, v] of Object.entries(KIND_STYLE)) addKindBadge(`dk-${k}`, v);
   const size = PHONE.matches ? 1.15 : 1;
   const icon = (image, extra = {}) => ({ 'icon-image': image, 'icon-size': ['interpolate', ['linear'], ['zoom'], 9.5, 0.75 * size, 13, size], 'icon-allow-overlap': true, ...extra });
   const before = 'labels-lines-local';
   map.addLayer({ id: 'icons-plan-major', type: 'symbol', source: 'plan', minzoom: 9.5, filter: PLAN_ICON_FILTERS['icons-plan-major'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
   map.addLayer({ id: 'icons-plan-minor', type: 'symbol', source: 'plan', minzoom: 11, filter: PLAN_ICON_FILTERS['icons-plan-minor'], layout: icon(['concat', 'pi-', ['get', 'category']]) }, before);
-  const devImg = ['case', ['==', ['get', 'status'], 'proposed'], ['concat', 'dp-', ['get', 'theme']], ['==', ['get', 'status'], 'potential'], ['concat', 'dv-', ['get', 'theme']], ['concat', 'de-', ['get', 'theme']]];
+  const devImg = ['case', ['in', ['get', 'kind'], ['literal', Object.keys(KIND_STYLE)]], ['concat', 'dk-', ['get', 'kind']], ['==', ['get', 'status'], 'proposed'], ['concat', 'dp-', ['get', 'theme']], ['==', ['get', 'status'], 'potential'], ['concat', 'dv-', ['get', 'theme']], ['concat', 'de-', ['get', 'theme']]];
   const pt = ['all', isPoint, ['!=', ['get', 'kind'], 'protectedLabel']];
   // Proposed sites draw above existing ones.
   map.addLayer({ id: 'icons-dev-minor', type: 'symbol', source: 'dev', minzoom: 12, filter: ['all', pt, ['in', ['get', 'kind'], ['literal', MINOR_KINDS]]], layout: icon(devImg, { 'symbol-sort-key': ['case', ['==', ['get', 'status'], 'proposed'], 1, 0] }) }, before);
@@ -3512,7 +3592,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117c')
+  import('./models3d.js?v=20261117e')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station

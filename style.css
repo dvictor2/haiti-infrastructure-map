@@ -756,3 +756,11 @@ body.resizing .edge-tab, body.resizing .panel { transition: none !important; }
 .pot-count { font-style: normal; font-weight: 700; color: var(--c); opacity: 0.75; text-decoration: underline dashed; text-underline-offset: 3px; }
 .badge.potential { color: #FDBA74; border-color: rgba(253, 186, 116, 0.45); border-style: dashed; }
 .pot-key { text-decoration: underline dashed; text-underline-offset: 3px; font-weight: 700; }
+.item .ico-c .sym, .pill .sym { font-size: 11.5px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; color: var(--c); }
+.pill .sym { margin-right: 5px; font-size: 12px; }
+/* Mineral and fuel symbols in lists and cards: the BME legend's shapes. */
+.kshape { display: inline-grid; place-items: center; width: 18px; height: 18px; font-style: normal; font-size: 8.5px; font-weight: 800; color: #0d1117; letter-spacing: -0.03em; outline: 1.5px dashed rgba(13, 17, 23, 0.85); outline-offset: -1.5px; }
+.kshape.circle { border-radius: 50%; }
+.kshape.square { border-radius: 2px; }
+.kshape.triangle { clip-path: polygon(50% 4%, 97% 94%, 3% 94%); outline: none; }
+.pill .kshape { margin-right: 6px; width: 16px; height: 16px; }

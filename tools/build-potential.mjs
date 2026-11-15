@@ -1,7 +1,8 @@
 // "Potential": resources identified by the government or official studies (not our proposals), and the
 // realignment of our own hydro proposals onto the government's hydropower sites.
 // Run after tools/build-dev.mjs:  node tools/build-potential.mjs
-// Inputs: source/potential-bme-2018.json (BME 2018 notice, facts only) and source/hydro-potential-phe.json
+// Inputs: source/potential-bme-2018.json (BME 2018 notice text, facts only), source/potential-bme-2018-map.json (symbols
+// and oil zones read from the notice's maps) and source/hydro-potential-phe.json
 // (PNUD / EdH / MTPTC hydropower map, positions read from its grid). Output: data/dev.geojson (rewritten).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { haversine, pointInRing } from './geo.mjs';
@@ -14,6 +15,7 @@ const depts = read('../data/departments.geojson');
 const rivers = read('../data/rivers.geojson');
 const bme = read('../source/potential-bme-2018.json');
 const phe = read('../source/hydro-potential-phe.json');
+const bmeMap = read('../source/potential-bme-2018-map.json');
 
 const deptOf = (q) => depts.features.find((f) => f.geometry.coordinates.some((poly) => pointInRing(q, poly[0])))?.properties.name ?? null;
 const towns = plan.features.filter((f) => ['city', 'town'].includes(f.properties.category));
@@ -48,11 +50,26 @@ for (const f of dev.features) if (f.properties.kind === 'wind' && /Azu/.test(f.p
 // 3. The Massif du Nord gold–copper belt is the government's own finding, not our proposal.
 for (const f of dev.features) if (f.properties.kind === 'mineralBelt') Object.assign(f.properties, { status: 'potential', theme: 'mining', src: 'bme2018' });
 
-// 4. Mines, quarries of industrial minerals, lignite and hot springs named in the BME notice.
-for (const s of bme.sites) {
-  const { at, theme = 'mining', ...rest } = s;
-  add({ theme, ...rest, place: s.name, src: 'bme2018', approx: true }, at);
-}
+// 4. Resources named in the BME notice's text, placed on the matching symbol of the BME map when one is close
+//    (same kind, nearest pairs first, one symbol per site); then the map's other symbols.
+const THEME = { lignite: 'energy', oil: 'energy', tarSand: 'energy', hotSpring: 'water' };
+const KM = { hotSpring: 20 };
+const mapSites = bmeMap.sites.map((m) => ({ ...m, used: false }));
+const pairs = [];
+const same = (a, b) => a === b || (b === 'goldCopper' && (a === 'gold' || a === 'copper'));
+// A measured deposit takes the big symbol before a nearby showing does (+6 km handicap for showings).
+bme.sites.forEach((t, i) => mapSites.forEach((m, j) => { if (same(t.kind, m.kind)) { const d = haversine(t.at, m.at); if (d <= (KM[t.kind] ?? 12)) pairs.push([d + (t.grade === 'showing' ? 6 : 0), i, j]); } }));
+const placed = new Map();
+for (const [, i, j] of pairs.sort((a, b) => a[0] - b[0])) if (!placed.has(i) && !mapSites[j].used) { placed.set(i, mapSites[j].at); mapSites[j].used = true; }
+bme.sites.forEach((s, i) => {
+  const { at, theme, ...rest } = s;
+  add({ theme: theme ?? THEME[s.kind] ?? 'mining', ...rest, place: s.name, src: 'bme2018', approx: true, onMap: placed.has(i) }, placed.get(i) ?? at);
+});
+for (const m of mapSites.filter((m) => !m.used)) add({ theme: THEME[m.kind] ?? 'mining', kind: m.kind, grade: m.grade, place: nearestTown(m.at), src: 'bme2018', approx: true, onMap: true }, m.at);
+
+// 5. Zones of oil interest (BME map, 2018). Not confirmed: the notice says 11 wells (1945–1977) were inconclusive.
+const ZONE_NAMES = { 1: "Bassin de l'Artibonite · Plateau Central", 2: 'Île de la Gonâve · Cul-de-Sac', 3: 'Banc de Rochelois (Nippes)' };
+for (const z of bmeMap.zones) dev.features.push({ type: 'Feature', properties: { id: `d${next++}`, status: 'potential', theme: 'energy', kind: 'oilZone', zone: z.zone, place: ZONE_NAMES[z.zone], src: 'bme2018', approx: true, dept: null }, geometry: { type: 'Polygon', coordinates: [z.ring] } });
 
 writeFileSync(devUrl, JSON.stringify(dev));
 const n = (st) => dev.features.filter((f) => f.properties.status === st).length;

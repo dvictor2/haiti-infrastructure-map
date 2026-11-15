@@ -1,0 +1,898 @@
+{
+ "about": "Symbols read from the BME map 'Carte du Potentiel Minier et Énergétique d'Haïti' (2018 notice, p. 28) and oil zones traced from 'Zones d'intérêt potentiel pétrolier en Haïti' (p. 30). Both maps were fitted to Haiti's OpenStreetMap coastline (mean gap under 1 km); symbol positions about ±2 km. grade: 'deposit' = large symbol (gisement), 'showing' = small symbol (indice), 'mapped' = size unclear. 'Calcaire à chaux' symbols are left out: their colour matches the Ouest background.",
+ "sites": [
+  {
+   "kind": "copper",
+   "at": [
+    -72.7252,
+    19.9118
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.8374,
+    19.8779
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "copper",
+   "at": [
+    -72.7266,
+    19.8826
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "copper",
+   "at": [
+    -72.6408,
+    19.8594
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -73.2712,
+    19.804
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.4704,
+    19.8017
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "bauxite",
+   "at": [
+    -72.7548,
+    19.7682
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.2205,
+    19.7407
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -72.1282,
+    19.6749
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -71.9962,
+    19.6869
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -71.8808,
+    19.6718
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -71.8363,
+    19.665
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -72.0453,
+    19.6736
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -73.1654,
+    19.664
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "aggregate",
+   "at": [
+    -71.9599,
+    19.644
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -72.4103,
+    19.6388
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -72.2119,
+    19.6218
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "copper",
+   "at": [
+    -72.3699,
+    19.6373
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.9274,
+    19.6213
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "hotSpring",
+   "at": [
+    -72.932,
+    19.6273
+   ],
+   "grade": "showing"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -73.0266,
+    19.6243
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "copper",
+   "at": [
+    -72.7944,
+    19.5925
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -72.4395,
+    19.603
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "granodiorite",
+   "at": [
+    -72.0915,
+    19.5838
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "nickel",
+   "at": [
+    -71.9646,
+    19.5626
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -72.583,
+    19.5214
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -72.7481,
+    19.4792
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.7205,
+    19.4518
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "copper",
+   "at": [
+    -71.9191,
+    19.4361
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.6723,
+    19.433
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "silver",
+   "at": [
+    -72.3138,
+    19.4281
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.7785,
+    19.4156
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.6141,
+    19.4222
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.2756,
+    19.3682
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.7765,
+    19.3562
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.9087,
+    19.3725
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.866,
+    19.3305
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.7963,
+    19.3173
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.812,
+    19.2693
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gold",
+   "at": [
+    -71.7309,
+    19.2457
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -72.7427,
+    19.2486
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gypsum",
+   "at": [
+    -72.1369,
+    19.2333
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "oil",
+   "at": [
+    -72.0949,
+    19.2115
+   ],
+   "grade": "showing"
+  },
+  {
+   "kind": "lignite",
+   "at": [
+    -72.1441,
+    19.1821
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.6656,
+    19.1561
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.005,
+    19.1427
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "hotSpring",
+   "at": [
+    -71.7543,
+    19.1345
+   ],
+   "grade": "showing"
+  },
+  {
+   "kind": "oil",
+   "at": [
+    -72.6347,
+    19.0943
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -71.9637,
+    19.0223
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gypsum",
+   "at": [
+    -72.7647,
+    19.0254
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.6573,
+    18.9909
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.166,
+    18.8856
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "phosphate",
+   "at": [
+    -71.7619,
+    18.8459
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.0054,
+    18.8157
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -71.865,
+    18.8114
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -72.1453,
+    18.7907
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "silicaSand",
+   "at": [
+    -72.285,
+    18.7776
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "oil",
+   "at": [
+    -72.8525,
+    18.7798
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "oil",
+   "at": [
+    -72.6741,
+    18.7586
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "silicaSand",
+   "at": [
+    -72.1676,
+    18.7226
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "hotSpring",
+   "at": [
+    -72.267,
+    18.714
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "gypsum",
+   "at": [
+    -72.36,
+    18.7092
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "silicaSand",
+   "at": [
+    -72.3181,
+    18.6855
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "pozzolan",
+   "at": [
+    -72.1139,
+    18.6463
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "cement",
+   "at": [
+    -71.9499,
+    18.4918
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "aggregate",
+   "at": [
+    -72.3022,
+    18.489
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "bauxite",
+   "at": [
+    -73.9452,
+    18.4817
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "limestonePure",
+   "at": [
+    -72.6349,
+    18.4571
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "bauxite",
+   "at": [
+    -73.19,
+    18.4389
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "nickel",
+   "at": [
+    -72.2884,
+    18.4254
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "limestonePure",
+   "at": [
+    -73.112,
+    18.4311
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "limestonePure",
+   "at": [
+    -73.1416,
+    18.4264
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -73.4972,
+    18.4153
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -71.8141,
+    18.3588
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "lignite",
+   "at": [
+    -73.4058,
+    18.3784
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -73.8818,
+    18.3232
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "nickel",
+   "at": [
+    -72.6062,
+    18.3128
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "lignite",
+   "at": [
+    -73.8228,
+    18.3198
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "bauxite",
+   "at": [
+    -72.4487,
+    18.2736
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -73.1072,
+    18.2851
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "limestonePure",
+   "at": [
+    -72.5658,
+    18.268
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -72.5173,
+    18.2705
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "bauxite",
+   "at": [
+    -71.804,
+    18.2218
+   ],
+   "grade": "deposit"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -72.5113,
+    18.2422
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -72.0279,
+    18.2385
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -72.7159,
+    18.2256
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "marble",
+   "at": [
+    -71.7694,
+    18.0965
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "goldCopper",
+   "at": [
+    -73.1951,
+    19.8606
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -73.2292,
+    19.6596
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -72.9162,
+    18.8449
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "salt",
+   "at": [
+    -73.3215,
+    18.2538
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "tarSand",
+   "at": [
+    -74.0915,
+    18.57
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "hotSpring",
+   "at": [
+    -74.416,
+    18.4997
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "nickel",
+   "at": [
+    -74.411,
+    18.3999
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "oil",
+   "at": [
+    -72.0476,
+    18.5125
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -71.7505,
+    19.5438
+   ],
+   "grade": "mapped"
+  },
+  {
+   "kind": "clay",
+   "at": [
+    -72.4898,
+    18.7905
+   ],
+   "grade": "mapped"
+  }
+ ],
+ "zones": [
+  {
+   "zone": 1,
+   "ring": [
+    [
+     -72.8748,
+     19.4868
+    ],
+    [
+     -71.7999,
+     19.0041
+    ],
+    [
+     -71.7447,
+     18.8646
+    ],
+    [
+     -71.747,
+     18.7558
+    ],
+    [
+     -71.8896,
+     18.6892
+    ],
+    [
+     -72.0049,
+     18.6319
+    ],
+    [
+     -72.0572,
+     18.6131
+    ],
+    [
+     -72.867,
+     18.8927
+    ],
+    [
+     -72.8748,
+     19.4868
+    ]
+   ]
+  },
+  {
+   "zone": 2,
+   "ring": [
+    [
+     -73.3022,
+     19.0267
+    ],
+    [
+     -72.0572,
+     18.6131
+    ],
+    [
+     -72.1206,
+     18.5508
+    ],
+    [
+     -72.3591,
+     18.5587
+    ],
+    [
+     -72.5159,
+     18.4918
+    ],
+    [
+     -72.7346,
+     18.4356
+    ],
+    [
+     -72.733,
+     18.5444
+    ],
+    [
+     -73.3208,
+     18.8685
+    ],
+    [
+     -73.3022,
+     19.0267
+    ]
+   ]
+  },
+  {
+   "zone": 3,
+   "ring": [
+    [
+     -73.9564,
+     18.7356
+    ],
+    [
+     -73.1465,
+     18.6725
+    ],
+    [
+     -73.1558,
+     18.431
+    ],
+    [
+     -73.6724,
+     18.4402
+    ],
+    [
+     -73.6718,
+     18.5055
+    ],
+    [
+     -73.9541,
+     18.5078
+    ],
+    [
+     -73.9564,
+     18.7356
+    ]
+   ]
+  }
+ ]
+}
