@@ -835,3 +835,11 @@ details.cost-note[open] > summary { margin-bottom: 4px; }
   .panel[data-state='full'] .brand-row { touch-action: auto; }
   .facts .fact span { hyphens: auto; -webkit-hyphens: auto; }
 }
+
+/* "Why this corridor" on rail + highway route cards */
+.why { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px 14px; margin: 0 0 14px; }
+.why .compare { margin: 8px 0 10px; }
+.why-text { margin: 0 0 8px; font-size: 14px; line-height: 1.45; }
+.why-text b { color: var(--accent); font-weight: 650; }
+.why .btn { margin-top: 2px; }
+@media (max-width: 760px) { .why-text { font-size: 15.5px; } }

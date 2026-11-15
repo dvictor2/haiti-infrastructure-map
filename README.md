@@ -77,3 +77,13 @@ Any static host works. On GitHub Pages: Settings → Pages → Deploy from a bra
 ## Credits
 
 Imagery © Esri, Maxar, Earthstar Geographics. Terrain: Mapzen terrain tiles on AWS Open Data. Street map: drawn in the page from OpenStreetMap data served by OpenFreeMap (© OpenStreetMap contributors, ODbL). Buildings (`data/buildings/`): © OpenStreetMap contributors, Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft; the building files are a database derived from those sources and are shared under the Open Database License (ODbL 1.0), see `data/buildings/LICENSE.md`; heights and roof colours are estimates; read with PMTiles. Mining and energy potential: Bureau des Mines et de l'Énergie, *Carte et notice du potentiel minier et énergétique d'Haïti* (2018), facts only; hydropower potential sites: PNUD / EdH / MTPTC map reproduced in that notice. Department outlines: Natural Earth (public domain). Map engine: MapLibre GL JS. 3D models: three.js, models from 3DAssets.dev (CC0) and Sketchfab artists (CC BY 4.0), see `ASSET_CREDITS.md`. Fonts: OpenFreeMap, Google Fonts (Inter).
+
+## Why this corridor
+
+Every rail + highway route card has a **Why this corridor** box: the same trip on today's roads next to the plan. `tools/build-today.mjs` routes each corridor's two ends on OSRM (FOSSGIS server, OpenStreetMap data, about one request a second) and measures that road's highest point and total climb from the terrain tiles. It writes `data/today.json`. Re-run it after the plan changes:
+
+```bash
+node tools/build-today.mjs
+```
+
+The plain-words reason is picked from the numbers: tunnels of 5 km or more → "under the mountains instead of over them"; at least 15% shorter → "a more direct line"; otherwise → "same line, made faster and safer". Today's times from OSRM are often optimistic on Haitian roads; the card says so.

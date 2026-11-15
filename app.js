@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117f';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117g';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -420,7 +420,7 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 // The data files carry the release version too, so a phone never mixes new code with old data.
-const getJSON = (u) => fetch(`${u}?v=20261117f`).then((r) => r.json());
+const getJSON = (u) => fetch(`${u}?v=20261117g`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -946,6 +946,7 @@ function closeSelection({ fromBack = false } = {}) {
 
 function clearSelection() {
   state.selected = null;
+  if (!state.page) setToday(null);
   clearDevSelection();
   for (const l of ['sel-glow', 'sel-line', 'sel-dash', 'sel-point']) map.getLayer(l) && map.setFilter(l, ['==', ['get', 'id'], -1]);
   setHashParam('f', null);
@@ -1054,6 +1055,7 @@ function renderDetail(f) {
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
       <button class="btn" id="btnShareF">${ICONS.share} ${t('btn.share')}</button>
     </div>
+    ${whyHTML(f)}
     ${isLineF && p.category === 'ferry' ? engineeringHTML(f, null, null) : ''}
     ${isLineF && !['border', 'ferry'].includes(p.category) ? `<div class="profile" id="profile"><div class="profile-head"><h3>${t('prof.title')}</h3><span>${esc(fmtKm(p.km))}</span></div><div class="loading">${t('prof.measuring')}</div></div>` : ''}
     ${conns.length ? `<p class="sub-head">${t(g.type === 'Point' ? 'list.within3' : 'list.connects')}</p>${listMore(conns)}` : ''}
@@ -1063,6 +1065,7 @@ function renderDetail(f) {
   el.querySelector('#btnZoom').onclick = () => (showMap(), fitFeature(f, { whole: true }));
   el.querySelector('#btnShareF').onclick = () => share(displayName(p));
   el.querySelector('#btnFly')?.addEventListener('click', () => flyAlong(f));
+  el.querySelector('#btnWhyToday')?.addEventListener('click', () => showTodayRoad(f));
   el.querySelector('#btnTripRoute')?.addEventListener('click', () => openPage('trip'));
   el.querySelector('#btn3dView')?.addEventListener('click', () => orbit3D(f));
   el.querySelector('#btnTrip')?.addEventListener('click', () => {
@@ -2358,6 +2361,13 @@ function zoomToggle() {
 // Pages in the panel: lists, trip planner, plan in numbers. Each has its own Back step.
 // ===========================================================================
 let numbers = null;
+// Today's road for each rail + highway corridor (tools/build-today.mjs): the "Why this corridor" box.
+let today = null;
+getJSON('data/today.json').then((d) => {
+  today = d.routes;
+  const f = state.selected != null && byId?.get(state.selected);
+  if (f && today[f.properties.id] && !$('#detail .why')) select(f.properties.id);
+}).catch(() => {});
 getJSON('data/numbers.json').then((d) => {
   numbers = d;
   if (state.page === 'numbers') renderPage('numbers', { move: false, keep: true });
@@ -2459,6 +2469,53 @@ document.addEventListener('click', (e) => {
 });
 // Cost estimates always say plainly what they are; the longer explanation is one tap away.
 const costNote = (style = '') => `<details class="source cost-note" ${style ? `style="${style}"` : ''}><summary>${t('eng.costShort')} <span class="i-dot">i</span></summary>${t('eng.costNote')}</details>`;
+
+// "Why this corridor": the same trip on today's roads next to the plan, with the main reason in plain words
+// (tunnels instead of climbing, a more direct line, or the same line made faster). Rail + highway corridors only.
+function whyHTML(f) {
+  const p = f.properties;
+  const r = today?.[p.id];
+  if (p.mode !== RAIL_MODE || !r || r.snapKm > 3 || !p.km) return '';
+  const e = ENG.rail;
+  const car = p.km / e.car, train = p.km / e.train, now = r.min / 60;
+  const shorter = Math.round((1 - p.km / r.km) * 100);
+  const sec = numbers?.routes[p.id] ?? {};
+  const tunnel = sec.tunnel ?? 0, viaduct = sec.viaduct ?? 0;
+  let reason;
+  if (tunnel >= 5) reason = t('why.tunnels', { tunnel: fmtKm(tunnel), viaduct: fmtKm(viaduct) });
+  else if (shorter >= 15) reason = t('why.direct', { n: (r.km / r.crowKm).toLocaleString(locale(), { maximumFractionDigits: 1 }) });
+  else reason = t('why.same');
+  const climb = r.topM >= 300 ? t('why.climb', { top: r.topM.toLocaleString(locale()), climb: r.climbM.toLocaleString(locale()) }) : '';
+  return `<div class="why">
+    <div class="profile-head"><h3>${t('why.title')}</h3></div>
+    <div class="compare">
+      <div class="cmp today"><span>${ico('car')}${t('trip.todayBy')}</span><b>${fmtMin(now)}</b><small>${fmtKm(r.km)}</small></div>
+      <div class="cmp-arrow" aria-hidden="true">→</div>
+      <div class="cmp plan"><span>${ico('train')}${t('trip.withPlan')}</span><b>${fmtMin(train)}</b><small>${fmtKm(p.km)} · ${t('why.carToo', { time: fmtMin(car) })}</small></div>
+    </div>
+    <p class="why-text">${shorter >= 5 ? `<b>${t('why.shorter', { n: shorter })}</b> ` : ''}${now > train ? `<b>${t('why.faster', { n: (now / train).toLocaleString(locale(), { maximumFractionDigits: 1 }) })}</b> ` : ''}${climb}</p>
+    <p class="why-text">${reason}</p>
+    <button class="btn" id="btnWhyToday">${ICONS.map} ${t('why.show')}</button>
+    <p class="source" style="margin:8px 0 0">${t('why.note')}</p>
+  </div>`;
+}
+// Draw today's road for a corridor on the map (live OSRM route, the same dashed line as Plan a trip).
+async function showTodayRoad(f) {
+  const c = f.geometry.coordinates;
+  const [a, b] = [c[0], c.at(-1)].map((p) => p.map((v) => v.toFixed(5)).join(','));
+  try {
+    const res = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${a};${b}?overview=simplified&geometries=geojson`);
+    const j = await res.json();
+    if (j.code !== 'Ok' || state.selected !== f.properties.id) return;
+    setToday(j.routes[0].geometry);
+    showMap();
+    const all = [...c, ...j.routes[0].geometry.coordinates];
+    const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
+    fitView([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], { padding: pad(), maxZoom: 12, pitch: 0, bearing: 0, ...MOVE });
+  } catch {
+    /* routing server unavailable: nothing to draw */
+  }
+}
 
 // The same Back button everywhere: item cards, pages and departments.
 const backBtn = (id = 'detailClose') => `<button class="back-btn" id="${id}">${ICONS.back}<span>${t('btn.back')}</span></button>`;
@@ -3684,7 +3741,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117f')
+  import('./models3d.js?v=20261117g')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station
