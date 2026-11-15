@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117e';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117f';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -57,10 +57,22 @@ const INFRA = ['station', 'toll', 'terminal', 'rivercross'];
 const ESSENTIAL = ['city', 'border']; // these stay on with All off
 const RAIL_MODE = 'Rail + highway';
 const CAT_KEYS = Object.keys(CATS);
+const TOP_LAYERS = ['corridor', 'trunk', 'ring']; // shown before "See all"
 const ROAD_CATS = CAT_KEYS.filter((k) => CATS[k].road);
 const LOCAL_MINZOOM = 8.6;
 const HAITI_BOUNDS = [[-74.55, 17.95], [-71.6, 20.12]];
 const PHONE = window.matchMedia('(max-width: 760px)');
+// Phones: the title and language row scroll away with the list, while the tabs and search stay pinned on top.
+// (On a computer the header stays fixed above the list, as before.)
+function placeHead() {
+  const head = document.querySelector('.panel-head');
+  const body = document.getElementById('panelBody');
+  if (!head || !body) return;
+  if (PHONE.matches && head.parentElement !== body) body.prepend(head);
+  if (!PHONE.matches && head.parentElement === body) body.before(head);
+}
+PHONE.addEventListener?.('change', placeHead);
+document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', placeHead) : placeHead();
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -150,6 +162,13 @@ const state = {
   base: 'satellite',
   collapsed: false,
   rail: true,
+  layersOpen: (() => {
+    try {
+      return localStorage.getItem('layersOpen') === '1';
+    } catch {
+      return false;
+    }
+  })(),
   tab: 'plan',
   devThemes: new Set(),
   devStatus: new Set(['proposed', 'potential']), // Existing starts off: open data can mislead (e.g. water kiosks)
@@ -401,7 +420,7 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 // The data files carry the release version too, so a phone never mixes new code with old data.
-const getJSON = (u) => fetch(`${u}?v=20261117e`).then((r) => r.json());
+const getJSON = (u) => fetch(`${u}?v=20261117f`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -510,6 +529,7 @@ map.on('load', async () => {
 // Controls
 // ---------------------------------------------------------------------------
 const ICONS = {
+  chevDown: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
   layers: '<svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></svg>',
   share: '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v7h14v-7"/></svg>',
@@ -947,9 +967,10 @@ function placeDetail() {
   $('#stats').hidden = !!state.dept;
   // The three main actions sit under an open department (after its cities and card), else under the stats.
   const acts = document.querySelector('.home-actions');
-  const anchor = state.dept ? $('#deptCard') : $('#stats');
+  const anchor = state.dept ? $('#deptCard') : $('#deptBlock');
   if (acts.previousElementSibling !== anchor) anchor.after(acts);
   acts.classList.toggle('in-dept', !!state.dept);
+  $('#home').classList.toggle('in-dept', !!state.dept);
   document.querySelectorAll('#deptCities .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.id) === state.selected));
   if (inDept) $('#depts').scrollIntoView({ block: 'start', behavior: 'smooth' });
   syncPage();
@@ -1026,6 +1047,8 @@ function renderDetail(f) {
       ${['city', 'town'].includes(p.category) ? `<button class="btn primary" id="btnTrip">${ICONS.route} ${t('btn.tripFrom')}</button>` : ''}
       ${isLineF && ROAD_CATS.includes(p.category) && routeEnds(f) ? `<button class="btn" id="btnTripRoute">${ICONS.route} ${t('btn.trip')}</button>` : ''}
       ${isLineF && p.km > 2 ? `<button class="btn primary" id="btnFly">${ICONS.fly} ${t('btn.fly')}</button>` : ''}
+    </div>
+    <div class="actions small">
       <button class="btn" id="btnZoom">${ICONS.zoom} ${t('btn.zoom')}</button>
       ${hasView(p) ? `<button class="btn" id="btn3dView">${ico('mountain')} ${t('btn.view3d')}</button>` : ''}
       <a class="btn" href="${gm}" target="_blank" rel="noopener">${ICONS.map} ${t(isLineF ? 'btn.today' : 'btn.gmaps')}</a>
@@ -1033,7 +1056,7 @@ function renderDetail(f) {
     </div>
     ${isLineF && p.category === 'ferry' ? engineeringHTML(f, null, null) : ''}
     ${isLineF && !['border', 'ferry'].includes(p.category) ? `<div class="profile" id="profile"><div class="profile-head"><h3>${t('prof.title')}</h3><span>${esc(fmtKm(p.km))}</span></div><div class="loading">${t('prof.measuring')}</div></div>` : ''}
-    ${conns.length ? `<p class="sub-head">${t(g.type === 'Point' ? 'list.within3' : 'list.connects')}</p><ul class="list">${conns.map((c) => itemHTML(c)).join('')}</ul>` : ''}
+    ${conns.length ? `<p class="sub-head">${t(g.type === 'Point' ? 'list.within3' : 'list.connects')}</p>${listMore(conns)}` : ''}
   `;
   el.hidden = false;
   el.querySelector('#detailClose').onclick = closeSelection;
@@ -1288,7 +1311,10 @@ function buildPanel() {
 
   // Search
   const input = $('#search');
-  input.addEventListener('input', () => runSearch(input.value));
+  input.addEventListener('input', () => {
+    runSearch(input.value);
+    $('#panelBody').scrollTop = 0;
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       input.value = '';
@@ -1336,6 +1362,7 @@ function buildPanel() {
     applyFilters();
     renderLayers();
   };
+  $('#devIntroMore').onclick = () => $('#devIntroWrap').classList.add('open');
   $('#allThemes').onclick = () => {
     if (state.devThemes.size) state.devThemes.clear();
     else Object.keys(DEV_THEMES).forEach((k) => state.devThemes.add(k));
@@ -1372,6 +1399,7 @@ function buildPanel() {
     const z = sheet;
     z.addEventListener('pointerdown', (e) => {
       if (!PHONE.matches || !e.target.closest(ZONES)) return;
+      if (sheet.dataset.state === 'full' && e.target.closest('.brand-row')) return;
       suppressClick = false;
       drag = { y: e.clientY, h: sheet.getBoundingClientRect().height, state: sheet.dataset.state, moved: false, z, id: e.pointerId };
     });
@@ -1458,7 +1486,9 @@ function renderStats() {
     const m = norm(f.properties.name + ' ' + f.properties.original).match(/vache|cayemite|tortue|gonave/g);
     m?.forEach((x) => islands.add(x));
   }
-  $('#stats').innerHTML = [
+  // The Swiss Alpine corridors are the heart of the plan, so they get a wide tile of their own on top.
+  const alpine = `<button class="stat tap nav wide" data-coll="cat-corridor"><b>${tot.corridor.count}</b><span>${ico('tunnel')}${esc(catLabel('corridor'))} · ${fmtKm(tot.corridor.km)}</span></button>`;
+  $('#stats').innerHTML = alpine + [
     [Math.round(railKm).toLocaleString(locale()) + ' km', t('stat.rail'), 'trunks', 'train'],
     [rings, t('stat.rings', { n: micro }), 'rings', 'ring'],
     [tot.station.count, t('stat.stations'), 'stations', 'station'],
@@ -1472,7 +1502,11 @@ function renderLayers() {
   const tot = catTotals(plan.features);
   const anyOn = CAT_KEYS.filter((k) => !ESSENTIAL.includes(k)).some((k) => !state.hidden.has(k)) || state.rail;
   $('#allLayers').textContent = t(anyOn ? 'layers.allOff' : 'layers.allOn');
-  $('#layers').innerHTML = CAT_KEYS.map((k) => {
+  // Only the main layers show at first; the rest open with "See all" (remembered on this device).
+  const open = state.layersOpen;
+  const keys = open ? [...TOP_LAYERS, ...CAT_KEYS.filter((k) => !TOP_LAYERS.includes(k))] : TOP_LAYERS;
+  const more = CAT_KEYS.length + 1 - TOP_LAYERS.length;
+  $('#layers').innerHTML = keys.map((k) => {
     const c = CATS[k];
     const sw = { line: '<i></i>', rail: '<i class="rail"></i>', dash: '<i class="dash"></i>', thin: '<i class="thin"></i>', dot: '<i class="dot"></i>', ring: '<i class="ring"></i>', square: '<i class="square"></i>' }[c.swatch];
     const meta = tot[k].km > 0 && c.swatch !== 'dot' ? `${tot[k].count} · ${fmtKm(tot[k].km)}` : `${tot[k].count}`;
@@ -1481,10 +1515,20 @@ function renderLayers() {
       <span class="layer-name">${catLabel(k)}${catHint(k) ? `<small>${catHint(k)}</small>` : ''}</span>
       <span class="layer-meta">${meta}</span>
       <span class="switch"></span></li>`;
-  }).join('') + `<li class="layer ${state.rail ? '' : 'off'}" data-k="__rail" role="switch" tabindex="0" aria-checked="${state.rail}">
+  }).join('') + (open ? `<li class="layer ${state.rail ? '' : 'off'}" data-k="__rail" role="switch" tabindex="0" aria-checked="${state.rail}">
       <span class="swatch" style="--c:#34D399"><i class="rail"></i></span>
       <span class="layer-name">${t('rail.label')}<small>${t('rail.hint')}</small></span>
-      <span class="layer-meta"></span><span class="switch"></span></li>`;
+      <span class="layer-meta"></span><span class="switch"></span></li>` : '') +
+    `<li><button class="layer-more" id="layersMore" aria-expanded="${!!open}">${esc(open ? t('layers.less') : t('layers.more', { n: more }))}<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="${open ? 'm6 15 6-6 6 6' : 'm6 9 6 6 6-6'}"/></svg></button></li>`;
+  $('#layersMore').onclick = () => {
+    state.layersOpen = !state.layersOpen;
+    try {
+      localStorage.setItem('layersOpen', state.layersOpen ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+    renderLayers();
+  };
   $('#layers').querySelectorAll('.layer').forEach((li) => {
     const toggle = () => {
       const k = li.dataset.k;
@@ -1557,14 +1601,14 @@ function setDept(name, { move = true, fromBack = false } = {}) {
     .sort((a, b) => (stats?.places[b.properties.id]?.p5 ?? 0) - (stats?.places[a.properties.id]?.p5 ?? 0))
     .filter((f) => { const k = norm(f.properties.name.replace(/\s*\(.*\)$/, '')); return seen.has(k) ? false : seen.add(k); })
     .slice(0, 12);
-  const routes = feats.filter((f) => ROAD_CATS.includes(f.properties.category) && f.properties.tier === 'national').sort((a, b) => b.properties.km - a.properties.km).slice(0, 8);
+  const routes = feats.filter((f) => ROAD_CATS.includes(f.properties.category) && f.properties.tier === 'national').sort((a, b) => b.properties.km - a.properties.km);
   card.innerHTML = `<div class="dept-card">
     <h3>${esc(name)}</h3>
     <p>${stats?.depts[name] ? `<b>${t('dev.deptPeople', { n: fmtPeople(stats.depts[name]) })}</b> · ` : ''}${t('dept.summary', { n: feats.length, km: fmtKm(roadKm), towns })}</p>
     <p class="dept-cost">${ico('coin')}${t('dept.cost', { cost: fmtMoney(feats.filter((f) => f.geometry.type === 'LineString' && engKind(f.properties)).reduce((sum, f) => sum + routeMid(f), 0)) })}</p>
     <div class="bar">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<span style="--c:${CATS[k].color};width:${(tt[k].km / roadKm) * 100}%" title="${catLabel(k)}: ${fmtKm(tt[k].km)}"></span>`).join('')}</div>
     <div class="legend-row legs">${ROAD_CATS.filter((k) => tt[k].km).map((k) => `<button class="leg nav" data-coll="cat-${k}@${esc(name)}" style="--c:${CATS[k].color}">${ico(CAT_ICON[k])}${catLabel(k)} ${fmtKm(tt[k].km)}</button>`).join('')}</div>
-    ${routes.length ? `<p class="sub-head">${t('list.main')}</p><ul class="list">${routes.map((f) => itemHTML(f)).join('')}</ul>` : ''}
+    ${routes.length ? `<p class="sub-head">${t('list.main')}</p>${listMore(routes)}` : ''}
   </div>`;
   $('#deptCities').innerHTML = cities.length ? `<p class="sub-head" style="margin:12px 0 6px">${t('dept.cities')}</p><div class="depts compact city-chips">${cities.map((f) => `<button class="chip ${state.selected === f.properties.id ? 'on' : ''}" data-id="${f.properties.id}">${ico(CAT_ICON[f.properties.category])}${esc(f.properties.name.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : '';
   $('#deptCities').querySelectorAll('.chip').forEach((b) => (b.onclick = () => (state.selected === Number(b.dataset.id) ? closeSelection() : select(Number(b.dataset.id)))));
@@ -2091,7 +2135,7 @@ function engineeringHTML(f, s, sm) {
       <div class="profile-head"><h3>${t('eng.title')}</h3></div>
       <p class="eng-spec">${esc(t(e.spec))}</p>
       <div class="eng-tiles"><div class="cost tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtRange(25, 45)}</b><span>${ico('coin')}${t('eng.cost')}</span></div><div class="tap info" data-act="ferry" role="button" tabindex="0"><b>${fmtMin(km / 30 + 0.5)}</b><span>${ico('ship')}${t('eng.crossing')}</span></div></div>
-      <p class="source">${t('eng.costNote')}</p></div>`;
+      ${costNote()}</div>`;
   }
   // A grade-limited track line through the terrain: where the ground is far above it → tunnel (or a
   // mountain section for ordinary roads); far below it or under water → viaduct / bridge; else at grade.
@@ -2150,7 +2194,7 @@ function engineeringHTML(f, s, sm) {
       <div class="cost tap info" data-act="cost" role="button" tabindex="0"><b>${fmtRange(mid * 0.7, mid * 1.5)}</b><span>${ico('coin')}${t('eng.cost')}</span></div>
       ${times.join('')}
     </div>
-    <p class="source">${t('eng.costNote')}</p>
+    ${costNote()}
   </div>`;
 }
 
@@ -2335,8 +2379,9 @@ function openPage(name) {
   const hs = history.state ?? {};
   if (hs.page === name && !hs.sel) return renderPage(name);
   // A page opened from an item replaces it in the history; otherwise it is a new step.
-  if (hs.sel) history.replaceState({ page: name }, '', location.href);
-  else history.pushState({ page: name }, '', location.href);
+  const step = hs.dept ? { page: name, dept: hs.dept } : { page: name };
+  if (hs.sel) history.replaceState(step, '', location.href);
+  else history.pushState(step, '', location.href);
   renderPage(name);
 }
 function closePage() {
@@ -2397,6 +2442,24 @@ function renderPage(name, { move = true, keep = false } = {}) {
   if (!keep) $('#panelBody').scrollTop = 0;
 }
 
+// A long list inside a card shows its first few rows; "See all N" opens the rest in place (nothing is removed).
+function listMore(feats, n = 5) {
+  if (feats.length <= n + 1) return `<ul class="list">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
+  return `<ul class="list more-list">${feats.map((f, i) => (i < n ? itemHTML(f) : itemHTML(f).replace(/^<li/, '<li data-more hidden'))).join('')}</ul>
+    <button class="layer-more see-all" data-n="${feats.length}">${esc(t('list.seeAll', { n: feats.length }))}${ICONS.chevDown}</button>`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('.see-all');
+  if (!b) return;
+  const ul = b.previousElementSibling;
+  const open = !b.classList.contains('open');
+  ul.querySelectorAll('[data-more]').forEach((li) => (li.hidden = !open));
+  b.classList.toggle('open', open);
+  b.innerHTML = `${esc(open ? t('list.fewer') : t('list.seeAll', { n: b.dataset.n }))}${ICONS.chevDown}`;
+});
+// Cost estimates always say plainly what they are; the longer explanation is one tap away.
+const costNote = (style = '') => `<details class="source cost-note" ${style ? `style="${style}"` : ''}><summary>${t('eng.costShort')} <span class="i-dot">i</span></summary>${t('eng.costNote')}</details>`;
+
 // The same Back button everywhere: item cards, pages and departments.
 const backBtn = (id = 'detailClose') => `<button class="back-btn" id="${id}">${ICONS.back}<span>${t('btn.back')}</span></button>`;
 
@@ -2411,8 +2474,8 @@ const GROUPS = [
   { k: 'cities', icon: 'city', cat: 'city', plan: ['city', 'town'] },
   { k: 'hospitals', icon: 'hospital', theme: 'health', dev: ['healthGap', 'hospital'] },
   { k: 'universities', icon: 'people', theme: 'connectivity', dev: ['university'] },
-  { k: 'energy', icon: 'bolt', theme: 'energy', dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam', 'lignite', 'oilZone', 'oil', 'tarSand'] },
-  { k: 'minerals', icon: 'mountain', theme: 'mining', dev: ['gold', 'goldCopper', 'copper', 'silver', 'nickel', 'bauxite', 'limestonePure', 'marble', 'granodiorite', 'cement', 'clay', 'gypsum', 'pozzolan', 'silicaSand', 'aggregate', 'phosphate', 'salt', 'lignite', 'hotSpring', 'mineralBelt'] },
+  { k: 'energy', icon: 'bolt', theme: 'energy', types: true, dev: ['hydro', 'solar', 'wind', 'microgrid', 'plant', 'dam', 'lignite', 'oilZone', 'oil', 'tarSand'] },
+  { k: 'minerals', icon: 'mountain', theme: 'mining', types: true, dev: ['gold', 'goldCopper', 'copper', 'silver', 'nickel', 'bauxite', 'limestonePure', 'marble', 'granodiorite', 'cement', 'clay', 'gypsum', 'pozzolan', 'silicaSand', 'aggregate', 'phosphate', 'salt', 'lignite', 'hotSpring', 'mineralBelt'] },
   { k: 'water', icon: 'drop', theme: 'water', dev: ['waterPlant', 'sewagePlant'] },
   { k: 'bridges', icon: 'bridge', cat: 'bridge', plan: ['bridge', 'rivercross'] },
   { k: 'tolls', icon: 'coin', cat: 'toll', plan: ['toll'] },
@@ -2421,6 +2484,19 @@ const GROUPS = [
   { k: 'farming', icon: 'leaf', theme: 'agri', dev: ['agriHub', 'researchAgri'] },
 ];
 const groupColor = (g) => (g.cat ? CATS[g.cat].color : DEV_THEMES[g.theme]);
+// A site that holds both gold and copper is listed under each of them.
+const TYPE_ALSO = { gold: ['goldCopper'], copper: ['goldCopper'] };
+const groupOf = (k) => GROUPS.find((x) => k.split('~')[0] === `g-${x.k}`);
+function typeFeats(feats, kind) {
+  const kinds = [kind, ...(TYPE_ALSO[kind] ?? [])];
+  return feats.filter((f) => kinds.includes(f.properties.kind));
+}
+// The type buttons on top of a group page (Gold 12, Copper 9…), counted inside the open department if any.
+function groupTypes(g, feats) {
+  const kinds = g.dev.filter((k) => k !== 'goldCopper');
+  return kinds.map((k) => [k, typeFeats(feats, k).length]).filter(([, n]) => n);
+}
+const typeIco = (g, kind) => (KIND_STYLE[kind] ? devIco({ kind }) : ico(THEME_ICON[g.theme]));
 function groupFeats(g, dept) {
   const order = [...(g.plan ?? []), ...(g.dev ?? [])];
   const rank = (f) => order.indexOf(f.properties.category ?? f.properties.kind);
@@ -2436,8 +2512,11 @@ function collSet(key) {
   const [k, dept] = key.split('@');
   const cat = (f) => f.properties.category;
   let feats;
-  const g = GROUPS.find((x) => k === `g-${x.k}`);
-  if (g) return groupFeats(g, dept);
+  const g = groupOf(k);
+  if (g) {
+    const kind = k.split('~')[1];
+    return kind ? typeFeats(groupFeats(g, dept), kind) : groupFeats(g, dept);
+  }
   if (k === 'trunks') feats = plan.features.filter((f) => ['corridor', 'trunk'].includes(cat(f)));
   else if (k === 'rings') feats = plan.features.filter((f) => cat(f) === 'ring');
   else if (k === 'stations') feats = plan.features.filter((f) => cat(f) === 'station');
@@ -2448,7 +2527,11 @@ function collSet(key) {
 }
 function collText(key) {
   const [k, dept] = key.split('@');
-  if (k.startsWith('g-')) return { title: dept ? `${t(`grp.${k.slice(2)}`)} · ${dept}` : t(`grp.${k.slice(2)}`), note: '' };
+  if (k.startsWith('g-')) {
+    const [gk, kind] = k.slice(2).split('~');
+    const title = kind ? `${t(`kind.${kind}`)}` : t(`grp.${gk}`);
+    return { title: dept ? `${title} · ${dept}` : title, note: '', up: kind ? t(`grp.${gk}`) : '' };
+  }
   const named = ['trunks', 'rings', 'stations', 'islands'].includes(k);
   const c = k.replace(/^cat-/, '');
   const title = named ? t(`coll.${k}`) : catLabel(c);
@@ -2456,7 +2539,9 @@ function collText(key) {
 }
 // A long "Find by type" list is split by department, in the order of the department buttons.
 function collListHTML(key, feats) {
-  if (!key.startsWith('g-') || key.includes('@') || feats.length <= 15) return `<ul class="list" style="margin-top:14px">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
+  // One type (e.g. Gold) is always split by department, so you see at once where it is found.
+  const byDept = key.includes('~') ? feats.length > 0 : feats.length > 15;
+  if (!key.startsWith('g-') || key.includes('@') || !byDept) return `<ul class="list" style="margin-top:14px">${feats.map((f) => itemHTML(f)).join('')}</ul>`;
   const by = new Map();
   for (const f of feats) {
     const d = f.properties.dept ?? '';
@@ -2470,18 +2555,25 @@ const PAGES = {
   coll: {
     html(key) {
       const feats = collSet(key);
-      const { title, note } = collText(key);
+      const { title, note, up } = collText(key);
       const km = feats.reduce((s, f) => s + (f.geometry.type === 'LineString' ? f.properties.km ?? 0 : 0), 0);
-      return `<h2>${esc(title)}</h2>
-        <p class="sub">${t('coll.count', { n: feats.length })}${km ? ` · ${fmtKm(km)}` : ''}</p>
+      const [k, dept] = key.split('@');
+      const g = groupOf(k);
+      const inDepts = k.includes('~') && !dept ? new Set(feats.map((f) => f.properties.dept).filter(Boolean)).size : 0;
+      const types = g?.types && !k.includes('~') ? groupTypes(g, feats) : [];
+      return `${up ? `<p class="kicker">${esc(up)}</p>` : ''}<h2>${esc(title)}</h2>
+        <p class="sub">${t('coll.count', { n: feats.length })}${km ? ` · ${fmtKm(km)}` : ''}${inDepts ? ` · ${t('grp.inDepts', { n: inDepts })}` : ''}</p>
         ${note ? `<p class="note">${esc(note)}</p>` : ''}
+        ${types.length > 1 ? `<p class="sub-head" style="margin-top:14px">${t('grp.types')}</p><div class="depts compact" id="typeChips">${types.map(([kind, n]) => `<button class="chip type-chip kind-chip" data-kind="${kind}" style="--c:${KIND_STYLE[kind]?.c ?? groupColor(g)}">${typeIco(g, kind)}${esc(t(`kind.${kind}`))}<small>${n}</small></button>`).join('')}</div>` : ''}
         ${collListHTML(key, feats)}`;
     },
     wire(box, key, move) {
       const feats = collSet(key);
-      const g = GROUPS.find((x) => key.split('@')[0] === `g-${x.k}`);
-      setHL(feats, g && g.k !== 'minerals' ? groupColor(g) : undefined);
+      const [k, dept] = key.split('@');
+      const g = groupOf(k);
+      setHL(feats, g && !g.types ? groupColor(g) : undefined);
       if (move) fitFeats(feats);
+      box.querySelectorAll('.kind-chip').forEach((b) => (b.onclick = () => openPage(`coll:${k}~${b.dataset.kind}${dept ? `@${dept}` : ''}`)));
       box.querySelectorAll('.item').forEach((b) => (b.onclick = () => select(itemId(b.dataset.id))));
     },
   },
@@ -2537,7 +2629,7 @@ function numbersHTML() {
       <p class="sub-head" style="margin-top:12px">${t('num.build')}</p>
       <div class="bar">${order.map((k) => `<span style="--c:${ENG_COLORS[k]};width:${(sec[k] / secTot) * 100}%"></span>`).join('')}</div>
       <div class="legend-row">${order.map((k) => `<span style="--c:${ENG_COLORS[k]}"><i></i>${t(`eng.${k}`)} ${fmtKm(sec[k])}</span>`).join('')}</div>
-      <p class="source" style="margin:0">${t('eng.costNote')}</p>
+      ${costNote('margin:0')}
     </div>
     <p class="sub-head">${t('num.people')}</p>
     <div class="eng-tiles two">
@@ -2551,7 +2643,7 @@ function numbersHTML() {
     <div class="table-wrap"><table class="dept-table">
       <thead><tr>${col('name', t('num.col.dept'))}${col('people', t('num.col.people'))}${col('km', t('num.col.km'))}${col('cost', t('num.col.cost'))}${col('st', t('num.col.st'))}</tr></thead>
       <tbody>${rows.map((r) => `<tr data-dept="${esc(r.name)}" tabindex="0"><td>${esc(r.name)}</td><td>${fmtPeople(r.people)}</td><td>${fmtKm(r.km)}</td><td>${fmtMoney(r.cost)}</td><td>${Math.round(r.st * 100)}%</td></tr>`).join('')}
-      <tr class="muted"><td>${t('num.between')}</td><td></td><td></td><td>${fmtMoney(between)}</td><td></td></tr></tbody>
+      ${between >= 1 ? `<tr class="muted"><td>${t('num.between')}</td><td></td><td></td><td>${fmtMoney(between)}</td><td></td></tr>` : ''}</tbody>
     </table></div>`;
 }
 function wireNumbers(box, key, move) {
@@ -3592,7 +3684,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117e')
+  import('./models3d.js?v=20261117f')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station

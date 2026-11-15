@@ -31,7 +31,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
-    <link rel="stylesheet" href="style.css?v=20261117e" />
+    <link rel="stylesheet" href="style.css?v=20261117f" />
   </head>
   <body>
     <div id="map" aria-label="Map of Haiti"></div>
@@ -50,6 +50,7 @@
           </button>
         </div>
         <div class="lang-row" id="langRow" role="radiogroup" data-i18n-aria="ctl.lang" aria-label="Language"></div>
+        <div class="head-stick">
         <div class="tabs" role="tablist">
           <button role="tab" id="tabPlan" data-tab="plan" aria-selected="true" data-i18n="tab.plan">Plan</button>
           <button role="tab" id="tabDev" data-tab="dev" aria-selected="false" data-i18n="tab.dev">Development</button>
@@ -57,6 +58,7 @@
         <div class="search">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
           <input id="search" type="search" placeholder="Search routes, cities, sites…" autocomplete="off" data-i18n-aria="search.aria" aria-label="Search the plan" />
+        </div>
         </div>
       </header>
 
@@ -70,6 +72,19 @@
 
         <section id="home">
           <div class="stats" id="stats"></div>
+          <div class="block" id="deptBlock">
+            <div class="detail-top page-top" id="deptBack" hidden>
+              <button class="back-btn" id="clearDept"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg><span data-i18n="btn.back">Back</span></button>
+            </div>
+            <div class="block-head">
+              <h2 data-i18n="h.departments">Departments</h2>
+            </div>
+            <div class="depts" id="depts"></div>
+            <div id="deptCities"></div>
+            <div id="deptSlot"></div>
+            <div id="deptCard"></div>
+          </div>
+
           <div class="home-actions">
             <button class="btn primary" id="btnTripHome">
               <svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></svg>
@@ -85,19 +100,6 @@
             </button>
           </div>
 
-          <div class="block">
-            <div class="detail-top page-top" id="deptBack" hidden>
-              <button class="back-btn" id="clearDept"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg><span data-i18n="btn.back">Back</span></button>
-            </div>
-            <div class="block-head">
-              <h2 data-i18n="h.departments">Departments</h2>
-            </div>
-            <div class="depts" id="depts"></div>
-            <div id="deptCities"></div>
-            <div id="deptSlot"></div>
-            <div id="deptCard"></div>
-          </div>
-
           <div class="block" id="groupsBlock">
             <div class="block-head">
               <h2 data-i18n="h.browse">Find by type</h2>
@@ -105,7 +107,7 @@
             <div class="depts" id="groups"></div>
           </div>
 
-          <div class="block">
+          <div class="block" id="layersBlock">
             <div class="block-head">
               <h2 data-i18n="h.layers">Layers</h2>
               <button class="pill-btn" id="allLayers">All off</button>
@@ -124,34 +126,37 @@
         </section>
 
         <section id="devHome" hidden>
-          <p class="note" data-i18n="dev.intro"></p>
-          <div class="block" style="margin-top:14px">
-            <ul class="layers">
+          <div class="intro-wrap" id="devIntroWrap">
+            <p class="note clamp" data-i18n="dev.intro"></p>
+            <button class="more-link" id="devIntroMore" data-i18n="btn.more">More</button>
+          </div>
+          <div class="block">
+            <div class="block-head">
+              <h2 data-i18n="dev.themes">Themes</h2>
+              <button class="pill-btn" id="allThemes">All on</button>
+            </div>
+            <div class="status-chips">
+              <button class="chip on" id="chipExisting" data-status="existing" data-i18n="dev.existing">Existing</button>
+              <button class="chip on" id="chipProposed" data-status="proposed" data-i18n="dev.proposed">Proposed</button>
+              <button class="chip on" id="chipPotential" data-status="potential" data-i18n="dev.potential">Potential</button>
+            </div>
+            <p class="count-key" id="devCountKey"></p>
+            <ul class="layers" id="devThemes"></ul>
+          </div>
+          <!-- Population and hazards: off by default, so they wait in a closed group under the themes. -->
+          <details class="block bg-maps" id="bgMaps">
+            <summary><span data-i18n="dev.bgMaps">Background maps</span> <small>(3)</small></summary>
+            <ul class="layers" style="margin-top:8px">
               <li class="layer off" id="popToggle" role="switch" tabindex="0" aria-checked="false">
                 <span class="swatch"><i class="heat"></i></span>
                 <span class="layer-name"><span data-i18n="dev.population"></span><small id="popHint"></small></span>
                 <span class="layer-meta"></span><span class="switch"></span>
               </li>
             </ul>
-          </div>
-          <div class="block">
-            <div class="block-head"><h2 data-i18n="haz.title">Hazards</h2></div>
+            <p class="sub-head" style="margin-top:10px" data-i18n="haz.title">Hazards</p>
             <ul class="layers" id="hazards"></ul>
             <div id="hazNote"></div>
-          </div>
-          <div class="block">
-            <div class="block-head">
-              <h2 data-i18n="dev.themes">Themes</h2>
-              <button class="pill-btn" id="allThemes">All on</button>
-              <div class="status-chips">
-                <button class="chip on" id="chipExisting" data-status="existing" data-i18n="dev.existing">Existing</button>
-                <button class="chip on" id="chipProposed" data-status="proposed" data-i18n="dev.proposed">Proposed</button>
-                <button class="chip on" id="chipPotential" data-status="potential" data-i18n="dev.potential">Potential</button>
-              </div>
-            </div>
-            <p class="count-key" id="devCountKey"></p>
-            <ul class="layers" id="devThemes"></ul>
-          </div>
+          </details>
           <details class="method">
             <summary data-i18n="dev.method">How proposals were chosen</summary>
             <div id="methodBody"></div>
@@ -195,6 +200,6 @@
     <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
     <!-- three.js, only fetched when the 3D models are needed (zoomed in close near a modelled place) -->
     <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }</script>
-    <script type="module" src="app.js?v=20261117e"></script>
+    <script type="module" src="app.js?v=20261117f"></script>
   </body>
 </html>
