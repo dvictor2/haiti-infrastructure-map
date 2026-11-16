@@ -116,16 +116,18 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
   // ---- scene ----
   const scene = new THREE.Scene(), camera = new THREE.Camera();
   const fade = { uC: { value: new THREE.Vector2() }, uR: { value: REACH } };
-  // every material fades to nothing toward the edge of reach
-  const fading = (m) => { m.onBeforeCompile = (s) => {
+  // Every material fades to nothing toward the edge of reach. A building fades as a whole, by the distance of its
+  // own middle (aMid): fading each spot on its own left slivers of roof and wall standing at the edge, which showed
+  // as stray pieces while the squares around them were still being built. The shadow sheet fades spot by spot.
+  const fading = (m, whole = true) => { if (whole) m.defines = { ...m.defines, FADE_WHOLE: '' }; m.onBeforeCompile = (s) => {
     Object.assign(s.uniforms, fade);
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;\n#ifdef FADE_WHOLE\nattribute vec2 aMid;\n#endif').replace('#include <project_vertex>', '#include <project_vertex>\n#ifdef FADE_WHOLE\nvWp = (modelMatrix * vec4(aMid.x, 0.0, aMid.y, 1.0)).xyz;\n#else\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\n#endif');
     s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp; uniform vec2 uC; uniform float uR;').replace('#include <colorspace_fragment>', '#include <colorspace_fragment>\ngl_FragColor.a *= 1.0 - smoothstep(uR * 0.78, uR, distance(vWp.xz, uC));');
   }; return m; };
   // (materials are flagged transparent so three.js draws them in renderOrder: the shadow sheet first, buildings over it)
   const wallMat = fading(new THREE.MeshLambertMaterial({ map: facadeTexture(), vertexColors: true, side: THREE.DoubleSide, transparent: true }));
   const plainMat = fading(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true }));
-  const sheetMat = fading(new THREE.ShadowMaterial({ color: 0x0a0d18, opacity: 0.4, depthTest: false, depthWrite: false }));
+  const sheetMat = fading(new THREE.ShadowMaterial({ color: 0x0a0d18, opacity: 0.4, depthTest: false, depthWrite: false }), false);
   const sun = new THREE.DirectionalLight(0xfff2dc, 2.6); sun.castShadow = true;
   const SPAN = REACH + 120, sc = sun.shadow.camera; sc.left = sc.bottom = -SPAN; sc.right = sc.top = SPAN; sc.near = 200; sc.far = 3200; sc.updateProjectionMatrix();
   sun.shadow.mapSize.set(phone ? 2048 : 4096, phone ? 2048 : 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.25; sun.shadow.radius = 2.5; sun.shadow.autoUpdate = false;
@@ -183,16 +185,17 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
   async function buildCell(cx, cy, old) {
     const feats = (await tileCells(cx >> 2, cy >> 2)).get(`${cx}/${cy}`) ?? [];
     const photo = old ? old.photo : feats.length && roofPhoto ? await photoFor(cx, cy).catch(() => null) : null;
-    if (map.isMoving() || !map.areTilesLoaded()) return null; // the map moved on while the photo was loading: the ground may not be settled
+    if (!settled()) return null; // the map moved on while the photo was loading: the ground may not be settled
     // the square's own frame: metres east/north of its middle
     const ox = (cx + 0.5) / N16, oy = (cy + 0.5) / N16, o = new maplibregl.MercatorCoordinate(ox, oy), mPerUnit = 1 / o.meterInMercatorCoordinateUnits(), oLL = o.toLngLat();
     const elev = map.queryTerrainElevation(oLL);
     if (elev == null) return null; // the ground is not loaded here yet: try again later
     const toLL = (e, n) => new maplibregl.MercatorCoordinate(ox + e / mPerUnit, oy - n / mPerUnit).toLngLat();
     const ground = (e, n) => (map.queryTerrainElevation(toLL(e, n)) ?? elev) - elev;
-    const W = { p: [], n: [], uv: [], c: [] }, R = { p: [], n: [], uv: [], c: [] };
+    const W = { p: [], n: [], uv: [], c: [], m: [] }, R = { p: [], n: [], uv: [], c: [], m: [] };
+    let mid = [0, 0]; // the middle of the building being drawn (scene x, z), carried by each of its corners
     const V = (e, y, n) => [e, y, -n];
-    const tri = (T, a, b, c, nrm, uvs, cols) => { T.p.push(...a, ...b, ...c); T.n.push(...nrm, ...nrm, ...nrm); T.uv.push(...uvs[0], ...uvs[1], ...uvs[2]); T.c.push(...cols[0], ...cols[1], ...cols[2]); };
+    const tri = (T, a, b, c, nrm, uvs, cols) => { T.p.push(...a, ...b, ...c); T.n.push(...nrm, ...nrm, ...nrm); T.uv.push(...uvs[0], ...uvs[1], ...uvs[2]); T.c.push(...cols[0], ...cols[1], ...cols[2]); T.m.push(...mid, ...mid, ...mid); };
     const quad = (T, a, b, c, d, nrm, uvs, cols) => { tri(T, a, b, c, nrm, [uvs[0], uvs[1], uvs[2]], [cols[0], cols[1], cols[2]]); tri(T, a, c, d, nrm, [uvs[0], uvs[2], uvs[3]], [cols[0], cols[2], cols[3]]); };
     const AO = 0.62, DEEP = 3, Z2 = [0, 0];
     const walls = (ring, gy, top, k) => {
@@ -228,7 +231,7 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
       const uvAt = (e, n) => (photo ? photo.uv(ox + e / mPerUnit, oy - n / mPerUnit) : Z2);
       // a roof corner carries the photo's place (uv) and a plain colour; a = 1 where the photo is used
       const box = h < 6 && Math.abs(A) < 150 ? obb(ring) : null;
-      count++;
+      count++; mid = [ce, -cn];
       if (box && Math.abs(A) / box.area > 0.78 && box.lb > 1.5 && box.lb < 7 && r2 < 0.65) {
         // small house: four walls and a two-sided sloped roof with a small overhang
         const { a, b, la, lb, c } = box, P = (u, v) => [c[0] + a[0] * u + b[0] * v, c[1] + a[1] * u + b[1] * v];
@@ -251,7 +254,7 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
         }
       }
     }
-    const geo = (T) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(T.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(T.n, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(T.uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(T.c, 3)); return g; };
+    const geo = (T) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(T.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(T.n, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(T.uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(T.c, 3)); g.setAttribute('aMid', new THREE.Float32BufferAttribute(T.m, 2)); return g; };
     const group = new THREE.Group(), meshes = [];
     if (count) {
       // Roofs: the photo where a corner has a place in it (uv ≥ 0), else that corner's plain colour.
@@ -271,6 +274,20 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
   }
   const dropCell = (cell, keepPhoto) => { scene.remove(cell.group); for (const m of cell.meshes) { m.geometry.dispose(); if (m.userData.photoMat && m.userData.photoMat !== plainMat) m.userData.photoMat.dispose(); } if (!keepPhoto) cell.photo?.tex.dispose(); };
 
+  // ---- is the ground settled? ----
+  // Ground heights are only to be trusted once the map has stopped, has asked for the terrain tiles of the new view
+  // (it does that while drawing a frame, not when it stops) and has them. Read any earlier, MapLibre answers from a
+  // coarser tile, or with 0 where it has none yet: buildings built on such a reading stand metres too low, and only
+  // slivers of their roofs show through the ground until the square is built again.
+  let stirred = 0, frames = 0; // when the view last changed or tiles were still coming; frames drawn since
+  const stir = () => { stirred = performance.now(); frames = 0; };
+  map.on('move', stir); map.on('terrain', stir);
+  const settled = () => {
+    if (map.isMoving() || !map.areTilesLoaded()) { stir(); return false; }
+    if (frames < 3) { map.triggerRepaint(); return false; }
+    return performance.now() - stirred > 250;
+  };
+
   // ---- which squares, and when ----
   const cells = new Map(), failed = new Map(); let busy = false, timer = 0;
   const later = (ms) => { if (!timer) timer = setTimeout(() => { timer = 0; refresh(); }, ms); };
@@ -278,9 +295,9 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
   const applyMode = (cell) => { if (cell.roof) cell.roof.material = mode.photo ? cell.roof.userData.photoMat : plainMat; };
   async function refresh() {
     if (busy || !renderer || !mode.on || map.getZoom() < FROM) return;
-    // Only while the map rests with its tiles loaded: ground heights read earlier come from a coarser terrain.
+    // Only while the ground is settled (see above).
     // (Not map.loaded(): the animated route lines keep the style busy long after the tiles are in.)
-    if (map.isMoving() || !map.areTilesLoaded()) { later(400); return; }
+    if (!settled()) { later(300); return; }
     const c = map.getCenter(), m = maplibregl.MercatorCoordinate.fromLngLat(c), cellM = CELL_M0 * Math.cos((c.lat * Math.PI) / 180), fx = m.x * N16, fy = m.y * N16;
     if (!anchor || Math.hypot(m.x - anchor.x, m.y - anchor.y) * anchor.mPerUnit > 1200) { setAnchor([c.lng, c.lat]); for (const cell of cells.values()) place(cell); shadowDirty = true; }
     // squares the circle of reach touches, nearest first
@@ -292,12 +309,17 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
     want.sort((a, b) => a.d - b.d); want.length = Math.min(want.length, MAX_CELLS);
     // drop the squares the view has left well behind
     for (const [k, cell] of cells) if (Math.hypot(cell.cx + 0.5 - fx, cell.cy + 0.5 - fy) * cellM > REACH + cellM * (cells.size > MAX_CELLS ? 0.9 : 1.6)) { dropCell(cell); cells.delete(k); shadowDirty = true; }
-    // a square built on ground that has since been refined (finer terrain arrived) is built again, keeping its photo
+    // Every square keeps to the ground the map now draws. A small change (on steep ground the reading wobbles a
+    // little with the view) just moves the square up or down; a real one (finer terrain arrived) has it built
+    // again, keeping its photo, at most three times per square.
     let stale = null;
-    // (at most twice per square, and only for a real change: on steep ground the reading wobbles a little with the view)
-    for (const cell of cells.values()) { const e = map.queryTerrainElevation(cell.oLL); if (e != null && Math.abs(e - cell.elev) > 2.5 && cell.rebuilt < 2) { stale = cell; break; } }
+    for (const cell of cells.values()) {
+      const e = map.queryTerrainElevation(cell.oLL), d = e == null ? 0 : Math.abs(e - cell.elev);
+      if (d > 2.5 && cell.rebuilt < 3) stale = stale ?? cell;
+      else if (d > 0.3) { cell.elev = e; place(cell); shadowDirty = true; map.triggerRepaint(); }
+    }
     const next = stale ? { x: stale.cx, y: stale.cy } : want.find((w) => !cells.has(`${w.x}/${w.y}`) && (failed.get(`${w.x}/${w.y}`) ?? 0) < performance.now());
-    if (!next) { tally(); return; }
+    if (!next) { tally(); if (cells.size) later(1500); return; } // (keeps an eye on the ground: 'idle' may never come while route lines animate)
     busy = true;
     try {
       const cell = await buildCell(next.x, next.y, stale);
@@ -321,6 +343,7 @@ export function addBuildings3D(map, { getTile, before, phone = false, roofPhoto 
     // The shadow picture is drawn into its own texture before the map starts the frame (MapLibre puts its GL state
     // back after prerender). It is redrawn only when squares come or go, or the view has moved a good way.
     prerender() {
+      frames++;
       if (!renderer || !anchor || !cells.size || !mode.on || map.getZoom() < FROM) return;
       const c = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter()), e = (c.x - anchor.x) * anchor.mPerUnit, s = (c.y - anchor.y) * anchor.mPerUnit;
       if (Math.hypot(e - sun.target.position.x, s - sun.target.position.z) > 90) shadowDirty = true;
