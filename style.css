@@ -806,7 +806,7 @@ details.cost-note[open] > summary { margin-bottom: 4px; }
   .facts .fact { min-width: 0; overflow: hidden; }
   .facts .fact b { overflow-wrap: anywhere; }
   /* "Map": small, in the bottom-right corner, so it covers less */
-  .panel[data-state='full']:not(.collapsed) ~ .map-btn { left: 14px; right: auto; transform: none; padding: 8px 14px; font-size: 14px !important; gap: 5px; }
+  .panel[data-state='full']:not(.collapsed) ~ .map-btn { left: 50%; right: auto; transform: translateX(-50%); padding: 8px 14px; font-size: 14px !important; gap: 5px; }
   .panel[data-state='full']:not(.collapsed) ~ .map-btn svg { width: 15px; height: 15px; }
 }
 

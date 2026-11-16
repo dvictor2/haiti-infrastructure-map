@@ -16,6 +16,8 @@ You may copy, share and adapt them if you credit the sources and share any adapt
 ## What was changed
 
 Made by `tools/build-buildings.mjs`: only zoom 14 over Haiti is kept, and each building keeps its outline plus
-an estimated height and roof colour. The outlines come from the sources; the heights and roof colours are
+an estimated height and roof colour. Outlines that reach into a mapped street, stream or other water are left out
+(streets and water from the same Overture release, themes "transportation" and "base"), and so are lone or unsure
+machine-found outlines outside built-up places. The outlines come from the sources; the heights and roof colours are
 estimates added here (almost no building in Haiti has a recorded height) and are screening-level only. Buildings
 standing on the map's 3D model places are marked so the map can leave them out.

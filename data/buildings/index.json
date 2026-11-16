@@ -7,19 +7,19 @@
   -71.60889,
   20.09721
  ],
- "buildings": 4218530,
+ "buildings": 2922467,
  "parts": [
   {
    "file": "haiti-buildings-1.pmtiles",
    "x0": 4802,
-   "x1": 4899,
-   "bytes": 28731040
+   "x1": 4913,
+   "bytes": 29800929
   },
   {
    "file": "haiti-buildings-2.pmtiles",
-   "x0": 4900,
+   "x0": 4914,
    "x1": 4932,
-   "bytes": 19529656
+   "bytes": 2725955
   }
  ]
 }

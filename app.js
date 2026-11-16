@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117g';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117h';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -420,7 +420,7 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 // The data files carry the release version too, so a phone never mixes new code with old data.
-const getJSON = (u) => fetch(`${u}?v=20261117g`).then((r) => r.json());
+const getJSON = (u) => fetch(`${u}?v=20261117h`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -3622,8 +3622,11 @@ function addModels() {
 // roof colours are ESTIMATES (almost no building in Haiti has a recorded height): see tools/build-buildings.mjs,
 // which cuts the files in data/buildings. Nothing is fetched until the map is zoomed in close.
 //   h height and m base in decimetres, c roof colour 0-5, x = stands on a 3D model place (left out).
-const BLD = { dir: 'data/buildings/', v: '20261111a', from: BLD_FROM };
-const ROOF = ['match', ['get', 'c'], 0, '#d8d4ca', 1, '#c9c5ba', 2, '#b3b0a6', 3, '#a9b2b6', 4, '#b08a74', 5, '#8fa3b5', '#c9c5ba'];
+// roofPhoto: up close, roofs are painted with the satellite photo (and roofs the photo shows as trees are left out).
+// Set it to false to use plain roof colours only.
+const BLD = { dir: 'data/buildings/', v: '20261116a', from: BLD_FROM, roofPhoto: true };
+// One calm colour for every building (mixed random roof colours looked cluttered).
+const ROOF = '#e4dfd3';
 const loadScript = (src) => new Promise((ok, fail) => document.head.append(Object.assign(document.createElement('script'), { src, onload: ok, onerror: () => fail(new Error('could not load ' + src)) })));
 function maybeLoadBuildings() {
   if (maybeLoadBuildings.started || map.getZoom() < BLD.from - 1) return;
@@ -3642,16 +3645,21 @@ function maybeLoadBuildings() {
         const tile = part && (await part.file.getZxy(z, x, y, abort.signal));
         return { data: tile?.data ?? new Uint8Array() };
       });
+      // The close-up buildings (buildings3d.js) read the same tiles directly.
+      BLD.getTile = async (z, x, y) => { const part = parts.find((p) => x >= p.x0 && x <= p.x1), tile = part && (await part.file.getZxy(z, x, y)); return tile?.data ? new Uint8Array(tile.data) : null; };
       map.addSource('bld', { type: 'vector', tiles: ['hb://{z}/{x}/{y}'], minzoom: index.zoom, maxzoom: index.zoom, bounds: index.bounds, attribution: 'Buildings © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="https://docs.overturemaps.org/attribution/">Overture Maps Foundation</a>, Google, Microsoft' });
       const onGround = ['!', ['has', 'x']];
       // With 3D off, the street map shows the outlines flat.
       map.addLayer({ id: 'bld-flat', type: 'fill', source: 'bld', 'source-layer': 'b', minzoom: BLD.from, filter: onGround, paint: { 'fill-color': '#dcd5c8', 'fill-outline-color': '#beb5a5', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], BLD.from, 0, BLD.from + 0.7, 1] } }, before);
-      map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'bld', 'source-layer': 'b', minzoom: BLD.from, filter: onGround, paint: {
+      // In 3D only the bigger buildings stand up (two storeys or more: schools, churches, markets, blocks).
+      // Small houses stay as the satellite photo shows them, so towns read calm instead of a jumble of boxes.
+      map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'bld', 'source-layer': 'b', minzoom: BLD.from, filter: ['all', onGround, ['>=', ['get', 'h'], 60]], paint: {
         'fill-extrusion-color': ROOF, 'fill-extrusion-vertical-gradient': true,
         'fill-extrusion-height': ['/', ['get', 'h'], 10], 'fill-extrusion-base': ['/', ['coalesce', ['get', 'm'], 0], 10],
         'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], BLD.from, 0, BLD.from + 0.7, 1],
       } }, before);
       syncBuildings();
+      map.on('zoom', maybeLoadReal); maybeLoadReal();
     })
     .catch((e) => {
       // Without the files (or the reader), fall back to OpenStreetMap's own buildings, on the street map only.
@@ -3661,6 +3669,24 @@ function maybeLoadBuildings() {
       } }, before);
       syncBuildings();
     });
+}
+// Up close (zoom 16 and closer, 3D on) the plain blocks give way to buildings drawn properly: sloped roofs, windows,
+// real shadows, roofs painted from the satellite photo (buildings3d.js). The file and three.js are fetched only then.
+// If they do not load, the blocks simply stay.
+let realBld = null;
+function maybeLoadReal() {
+  if (maybeLoadReal.started || !state.terrain || !BLD.getTile || map.getZoom() < (PHONE.matches ? 16.2 : 16) - 0.4) return;
+  maybeLoadReal.started = true;
+  map.off('zoom', maybeLoadReal);
+  import('./buildings3d.js?v=20261117h')
+    .then((m) => {
+      realBld = m.addBuildings3D(map, { getTile: BLD.getTile, before: 'st-road-names', phone: PHONE.matches, roofPhoto: BLD.roofPhoto });
+      // The blocks stop where the drawn buildings take over. A clean switch, not a fade: half-transparent blocks
+      // are drawn through an off-screen picture, and that goes wrong in the frames this layer also draws in.
+      map.setLayerZoomRange('bld', BLD.from, realBld.from);
+      syncBuildings();
+    })
+    .catch((e) => console.warn('Close-up buildings not loaded:', e));
 }
 // The dot of the 'lines-over' layer: a round dot stored as a distance field, so the map can tint it any colour.
 function addLineDot() {
@@ -3676,6 +3702,8 @@ function syncBuildings() {
   show('lines-over', state.terrain && !!map.getLayer('bld'));
   show('bld-flat', !state.terrain && streets);
   show('osm-buildings', state.terrain && streets);
+  realBld?.setMode({ on: state.terrain, photo: !streets });
+  if (state.terrain) maybeLoadReal();
 }
 
 // Real 3D models (models3d.js, ASSET_CREDITS.md): a few places in the plan shown with models made by 3D artists.
@@ -3741,7 +3769,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117g')
+  import('./models3d.js?v=20261117h')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station
