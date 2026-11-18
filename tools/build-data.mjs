@@ -181,6 +181,15 @@ try {
   /* no fixes yet */
 }
 
+// Routes redrawn by hand after the route review (tools/redraw-routes.mjs). These win over both the original
+// drawing and the automatic fixes, with or without --raw.
+let REDRAWS = {};
+try {
+  REDRAWS = JSON.parse(readFileSync(new URL('../source/route-redraws.json', import.meta.url)));
+} catch {
+  /* none */
+}
+
 const features = HAITI_PROJECT_SPECS.map((spec, i) => {
   const category = classify(spec);
   const { name, subtitle } = cleanName(spec.label);
@@ -188,6 +197,9 @@ const features = HAITI_PROJECT_SPECS.map((spec, i) => {
   let km = null;
   if (spec.type === 'pin') {
     geometry = { type: 'Point', coordinates: r5([spec.longitude, spec.latitude]) };
+  } else if (REDRAWS[i + 1] && spec.type === 'route') {
+    geometry = { type: 'LineString', coordinates: REDRAWS[i + 1] };
+    km = lengthKm(REDRAWS[i + 1]);
   } else if (FIXES[i + 1] && spec.type === 'route') {
     geometry = { type: 'LineString', coordinates: FIXES[i + 1] };
     km = lengthKm(FIXES[i + 1]);

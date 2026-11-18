@@ -1,7 +1,7 @@
 /* Haiti Infrastructure Plan — interactive map
  * Plain ES module, no build step. MapLibre GL is loaded as a global from unpkg in index.html.
  */
-import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117i';
+import { t, setLang, getLang, pickInitialLang, LANGS, locale } from './i18n.js?v=20261117j';
 
 const maplibregl = window.maplibregl;
 setLang(pickInitialLang());
@@ -420,7 +420,7 @@ function applyFilters() {
 // Load
 // ---------------------------------------------------------------------------
 // The data files carry the release version too, so a phone never mixes new code with old data.
-const getJSON = (u) => fetch(`${u}?v=20261117i`).then((r) => r.json());
+const getJSON = (u) => fetch(`${u}?v=20261117j`).then((r) => r.json());
 const dataReady = Promise.all([getJSON('data/plan.geojson'), getJSON('data/departments.geojson'), getJSON('data/dev.geojson'), getJSON('data/pop.json'), getJSON('data/stats.json'), getJSON('data/rivers.geojson'), getJSON('data/airports.geojson').catch(() => ({ features: [] }))]);
 let rivers;
 
@@ -3678,7 +3678,7 @@ function maybeLoadReal() {
   if (maybeLoadReal.started || !state.terrain || !BLD.getTile || map.getZoom() < (PHONE.matches ? 16.2 : 16) - 0.4) return;
   maybeLoadReal.started = true;
   map.off('zoom', maybeLoadReal);
-  import('./buildings3d.js?v=20261117i')
+  import('./buildings3d.js?v=20261117j')
     .then((m) => {
       realBld = m.addBuildings3D(map, { getTile: BLD.getTile, before: 'st-road-names', phone: PHONE.matches, roofPhoto: BLD.roofPhoto });
       // The blocks stop where the drawn buildings take over. A clean switch, not a fade: half-transparent blocks
@@ -3769,7 +3769,7 @@ function maybeLoadModels() {
   const c = map.getCenter();
   if (!modelPlaces.some((p) => Math.abs(c.lng - p.center[0]) < p.radius + 0.03 && Math.abs(c.lat - p.center[1]) < p.radius + 0.03)) return;
   maybeLoadModels.started = true;
-  import('./models3d.js?v=20261117i')
+  import('./models3d.js?v=20261117j')
     .then((m) => {
       m.addModels3D(map, { places: modelPlaces, before: 'labels-lines-local', reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches });
       // Labels are never hidden by 3D objects, so the modelled line's name would print across its own station
