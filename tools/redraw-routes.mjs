@@ -24,6 +24,15 @@ const dev = JSON.parse(readFileSync(new URL('../data/dev.geojson', import.meta.u
 const airport = JSON.parse(readFileSync(new URL('../source/cap-haitien-airport.json', import.meta.url)));
 const FENCE = [airport.fence];
 const FENCE_GAP = 0.1; // km to keep clear of the airport fence
+// Every airport in Haiti (OpenStreetMap outlines and runways, source/haiti-airports.json): no line may run inside an
+// airport fence, within FENCE_GAP of it, or within 150 m of a runway.
+const ALL_AIRPORTS = JSON.parse(readFileSync(new URL('../source/haiti-airports.json', import.meta.url)));
+const box = (c, m) => { const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]); return [Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m]; };
+const inBox = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+const AF = ALL_AIRPORTS.fences.map((f) => ({ ring: f.ring, b: box(f.ring, 0.01) }));
+const AR = ALL_AIRPORTS.runways.map((c) => ({ c, b: box(c, 0.01) }));
+const nearAirport = (p) => AF.some((f) => inBox(p, f.b) && (pointInRing(p, f.ring) || distToLine(p, f.ring) < FENCE_GAP)) ||
+  AR.some((r) => inBox(p, r.b) && distToLine(p, r.c) < 0.15);
 const citadelle = dev.features.find((f) => /Citadelle/.test(f.properties.name)).geometry.coordinates;
 
 const dem = createDem(12);
@@ -50,7 +59,7 @@ async function clearAirportAt(c, rejoin) {
 }
 // Grid paths come out stepped: straighten them as much as possible, then round the corners (Chaikin),
 // as long as the result still keeps clear of the fence.
-const clear = (l) => densify(l, 0.02).every((p) => !nearFence(p));
+const clear = (l) => densify(l, 0.02).every((p) => !nearFence(p) && !nearAirport(p));
 function chaikin(l) {
   const o = [l[0]];
   for (let i = 0; i < l.length - 1; i++) {
@@ -60,15 +69,29 @@ function chaikin(l) {
   o.push(l.at(-1));
   return o;
 }
+const dryLine = (l) => densify(l, 0.05).every((p) => onLand(p) && !(dem.elevation(...p) < 1)); // no height data counts as dry
+const wetCount = (l) => densify(l, 0.02).filter((p) => !onLand(p) || dem.elevation(...p) < 1).length;
 function smoothClear(path) {
-  let best = path;
-  for (const tol of [0.15, 0.1, 0.06, 0.03]) {
+  // First try plain simplification; if that cuts into an airport or the water, string-pull instead: from each point
+  // jump straight to the farthest later point that is still clear.
+  const rawDry = dryLine(path);
+  for (const tol of [0.15, 0.1, 0.06]) {
     const s = simplify(path, tol);
-    if (clear(s)) { best = s; break; }
+    if (clear(s) && (!rawDry || dryLine(s))) return roundCorners(s);
   }
+  let best = [path[0]];
+  for (let i = 0; i < path.length - 1; ) {
+    let j = path.length - 1;
+    while (j > i + 1 && !(clear([path[i], path[j]]) && wetCount([path[i], path[j]]) <= wetCount(path.slice(i, j + 1)))) j--;
+    best.push(path[j]);
+    i = j;
+  }
+  return roundCorners(best);
+}
+function roundCorners(best) {
   for (let k = 0; k < 3; k++) {
     const s = chaikin(best);
-    if (!clear(s)) break;
+    if (!clear(s) || wetCount(s) > wetCount(best)) break; // rounding may not add any water
     best = s;
   }
   return best;
@@ -138,7 +161,7 @@ async function road(via) {
 
 // Lowest-cost path on a 150 m grid: distance, plus a heavy charge for every metre climbed or dropped
 // (a train wants under ~3%), never into the sea or an `avoid` area.
-async function low([a, b], avoid, steep = 400, gap = 0) {
+async function low([a, b], avoid, steep = 400, gap = 0, isBad = null) {
   const STEP = 0.15, PAD = 5;
   const lat0 = (a[1] + b[1]) / 2;
   const dx = STEP / kx(lat0), dy = STEP / KY;
@@ -146,11 +169,12 @@ async function low([a, b], avoid, steep = 400, gap = 0) {
   const W = Math.ceil((Math.max(a[0], b[0]) + PAD / kx(lat0) - x0) / dx), H = Math.ceil((Math.max(a[1], b[1]) + PAD / KY - y0) / dy);
   const at = (i) => [x0 + (i % W) * dx, y0 + Math.floor(i / W) * dy];
   await dem.preload(Array.from({ length: Math.ceil(W / 20) * Math.ceil(H / 20) }, (_, k) => at((Math.floor(k / Math.ceil(W / 20)) * 20) * W + (k % Math.ceil(W / 20)) * 20)), 3);
-  const elev = new Float32Array(W * H), bad = new Uint8Array(W * H);
+  const elev = new Float32Array(W * H), bad = new Uint8Array(W * H), wet = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
     const p = at(i);
     elev[i] = dem.elevation(...p);
-    bad[i] = !(elev[i] >= 1) || (avoid && avoid.some((r) => pointInRing(p, r) || (gap && distToLine(p, r) < gap))) ? 1 : 0;
+    wet[i] = onLand(p) ? 0 : 1;
+    bad[i] = !(elev[i] >= 1) || (avoid && avoid.some((r) => pointInRing(p, r) || (gap && distToLine(p, r) < gap))) || (isBad && isBad(p)) ? 1 : 0;
   }
   const cell = (p) => Math.round((p[1] - y0) / dy) * W + Math.round((p[0] - x0) / dx);
   const s = cell(a), t = cell(b);
@@ -173,7 +197,7 @@ async function low([a, b], avoid, steep = 400, gap = 0) {
       if (bad[j]) continue;
       const d = STEP * Math.hypot(ox, oy);
       const grade = Math.abs(elev[j] - elev[i]) / (d * 1000);
-      const nc = c + d * (1 + 40 * grade + (grade > 0.03 ? steep * (grade - 0.03) : 0));
+      const nc = c + d * (1 + 40 * grade + (grade > 0.03 ? steep * (grade - 0.03) : 0)) * (wet[j] ? 20 : 1); // mapped water: allowed, but very costly
       if (nc < cost[j]) { cost[j] = nc; prev[j] = i; push([nc, j]); }
     }
   }
@@ -212,7 +236,7 @@ for (const [id, pieces] of Object.entries(REDRAW)) {
 }
 // #4 Jérémie – Port-Salut: stop in Port-Salut (the line runs cape → Port-Salut → Jérémie).
 {
-  const c4 = line(4), ps = pin('Port-Salut');
+  const c4 = orig(4), ps = pin('Port-Salut'); // from the original shape, so a re-run gives the same result
   const k = c4.reduce((best, p, i) => (haversine(p, ps) < haversine(c4[best], ps) ? i : best), 0);
   out[4] = [ps, ...c4.slice(k + 1)].map(r5);
 }
@@ -231,9 +255,91 @@ out[54] = ring54;
 }
 out[279] = loop279;
 console.log('#41 now ends on the ring at', CAP_STATION);
+// Every other line that runs into an airport: trim an end that stops inside it, and take each crossing round the
+// outside of the fence.
+// An end that stopped inside an airport is reconnected to the nearest clear point on another line (usually the
+// city's ring road), by a short path round the fence, instead of being cut back.
+const LINE_CATS = ['corridor', 'trunk', 'ring', 'urban', 'feeder'];
+const lineIds = plan.features.filter((f) => f.geometry.type === 'LineString' && LINE_CATS.includes(f.properties.category)).map((f) => f.properties.id);
+const geomOf = (id) => out[id] ?? orig(id);
+function nearestClearOnOthers(p, selfId) {
+  let best = null, bd = Infinity;
+  for (const id of lineIds) {
+    if (id === selfId) continue;
+    const g = geomOf(id);
+    if (!g.some((q) => Math.abs(q[0] - p[0]) < 0.06 && Math.abs(q[1] - p[1]) < 0.06)) continue;
+    for (const q of densify(g, 0.03)) {
+      const d = haversine(p, q);
+      if (d < bd && !nearAirport(q)) [best, bd] = [q, d];
+    }
+  }
+  return best;
+}
+async function reattach(c, selfId) {
+  // c[0] is the original (airport) end; drop points until clear, then path from a clear point on another line.
+  const end = c[0];
+  let k = 0;
+  while (k < c.length - 1 && nearAirport(c[k])) k++;
+  const to = nearestClearOnOthers(end, selfId);
+  if (!to) return c.slice(k);
+  const path = await low([to, c[k]], null, 400, 0, nearAirport);
+  return [...smoothClear(path), ...c.slice(k + 1)];
+}
+async function avoidAirports(c0, selfId) {
+  let c = c0.slice();
+  if (nearAirport(c[0])) c = await reattach(c, selfId);
+  if (nearAirport(c.at(-1))) c = (await reattach([...c].reverse(), selfId)).reverse();
+  const roomy = (p) => !nearAirport(p) && !AF.some((f) => inBox(p, f.b) && distToLine(p, f.ring) < 0.25);
+  for (let round = 0; round < 6; round++) {
+    const bad = c.slice(1).map((p, i) => densify([c[i], p], 0.02).some(nearAirport));
+    let a = bad.indexOf(true);
+    if (a < 0) return c;
+    let b = a + 1;
+    while (b < bad.length && bad[b]) b++;
+    while (a > 0 && !roomy(c[a])) a--;
+    while (b < c.length - 1 && !roomy(c[b])) b++;
+    const path = await low([c[a], c[b]], null, 400, 0, nearAirport);
+    c = [...c.slice(0, a), ...smoothClear(path), ...c.slice(b + 1)].map(r5);
+  }
+  return c;
+}
+{
+  // Ring roads first, so lines that reattach to a ring use its final shape.
+  const order = (f) => (f.properties.category === 'ring' ? 0 : ['corridor', 'trunk'].includes(f.properties.category) ? 1 : 2);
+  for (const f of plan.features.filter((f) => f.geometry.type === 'LineString' && LINE_CATS.includes(f.properties.category)).sort((a, b) => order(a) - order(b))) {
+    const id = f.properties.id;
+    const cur = out[id] ?? orig(id);
+    if (clear(cur)) continue;
+    out[id] = (await avoidAirports(cur, id)).map(r5);
+    console.log(`#${id} ${f.properties.name}: kept clear of airports`);
+  }
+}
 // Two local lines started on the old #41 / #38 paths near the airport; extend each to its nearest point on the new line.
 for (const [id, on] of [[203, out[41]], [281, out[38]]]) {
   const c = orig(id);
   out[id] = [r5(nearestOnLine(c[0], on).pt), ...c];
+}
+// Any line whose end touched another line before this script moved that line is re-joined to its new position.
+{
+  const before = (id) => orig(id);
+  for (const id of lineIds) {
+    let c = out[id] ?? orig(id);
+    let changed = false;
+    for (const atStart of [true, false]) {
+      const e = atStart ? c[0] : c.at(-1);
+      let touched = null;
+      for (const o of lineIds) {
+        if (o === id || !out[o]) continue;
+        if (distToLine(e, before(o)) < 0.15 && distToLine(e, out[o]) > 0.15) touched = o;
+      }
+      if (touched == null) continue;
+      if (lineIds.some((o) => o !== id && distToLine(e, geomOf(o)) < 0.15)) continue; // still on the network
+      const q = r5(nearestOnLine(e, out[touched]).pt);
+      c = atStart ? [q, ...c] : [...c, q];
+      changed = true;
+      console.log(`#${id}: end re-joined to #${touched}`);
+    }
+    if (changed) out[id] = c;
+  }
 }
 writeFileSync(new URL('../source/route-redraws.json', import.meta.url), JSON.stringify(out));
